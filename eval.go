@@ -130,11 +130,11 @@ func (st *scope) getBlock(name string) (block *BlockNode, has bool) {
 }
 
 // YieldTemplate yields a template same as include
-func (st *Runtime) YieldTemplate(name string, context interface{}) {
+func (st *Runtime) YieldTemplate(path string, context interface{}) {
 
-	t, err := st.set.GetTemplate(name)
+	t, err := st.set.GetTemplate(path)
 	if err != nil {
-		panic(fmt.Errorf("include: template %q was not found: %s", name, err))
+		panic(fmt.Errorf("include: template %q was not found: %s", path, err))
 	}
 
 	st.newScope()
@@ -508,18 +508,18 @@ func (st *Runtime) executeList(list *ListNode) {
 			st.executeYieldBlock(block, block.Parameters, block.Parameters, block.Expression, block.Content)
 		case NodeInclude:
 			node := node.(*IncludeNode)
-			var Name string
+			var path string
 
-			name := st.evalPrimaryExpressionGroup(node.Name)
-			if name.Type().Implements(stringerType) {
-				Name = name.String()
-			} else if name.Kind() == reflect.String {
-				Name = name.String()
+			_path := st.evalPrimaryExpressionGroup(node.Name)
+			if _path.Type().Implements(stringerType) {
+				path = _path.String()
+			} else if _path.Kind() == reflect.String {
+				path = _path.String()
 			} else {
-				node.errorf("unexpected expression type %q in template yielding", getTypeString(name))
+				node.errorf("unexpected expression type %q in template yielding", getTypeString(_path))
 			}
 
-			t, err := st.set.getTemplate(Name, node.TemplateName)
+			t, err := st.set.getSiblingTemplate(path, node.TemplatePath)
 			if err != nil {
 				node.error(err)
 			} else {

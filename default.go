@@ -25,11 +25,7 @@ import (
 	"text/template"
 )
 
-var defaultExtensions = []string{
-	".html.jet",
-	".jet.html",
-	".jet",
-}
+
 
 var defaultVariables map[string]reflect.Value
 
