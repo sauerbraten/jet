@@ -17,130 +17,14 @@ package jet
 import (
 	"bytes"
 	"fmt"
-	"io"
+	"io/ioutil"
 	"reflect"
-	"runtime"
 	"strings"
-	"sync"
 	"testing"
 	"text/template"
 )
 
-var (
-	JetTestingSet = NewSet(nil, "")
-
-	ww    io.Writer = (*devNull)(nil)
-	users           = []*User{
-		{"Mario Santos", "mario@gmail.com"},
-		{"Joel Silva", "joelsilva@gmail.com"},
-		{"Luis Santana", "luis.santana@gmail.com"},
-		{"Luis Santana", "luis.santana@gmail.com"},
-		{"Mario Santos", "mario@gmail.com"},
-		{"Joel Silva", "joelsilva@gmail.com"},
-		{"Luis Santana", "luis.santana@gmail.com"},
-		{"Luis Santana", "luis.santana@gmail.com"},
-		{"Mario Santos", "mario@gmail.com"},
-		{"Joel Silva", "joelsilva@gmail.com"},
-		{"Luis Santana", "luis.santana@gmail.com"},
-		{"Luis Santana", "luis.santana@gmail.com"},
-		{"Mario Santos", "mario@gmail.com"},
-		{"Joel Silva", "joelsilva@gmail.com"},
-		{"Luis Santana", "luis.santana@gmail.com"},
-		{"Luis Santana", "luis.santana@gmail.com"},
-		{"Mario Santos", "mario@gmail.com"},
-		{"Joel Silva", "joelsilva@gmail.com"},
-		{"Luis Santana", "luis.santana@gmail.com"},
-		{"Luis Santana", "luis.santana@gmail.com"},
-		{"Mario Santos", "mario@gmail.com"},
-		{"Joel Silva", "joelsilva@gmail.com"},
-		{"Luis Santana", "luis.santana@gmail.com"},
-		{"Luis Santana", "luis.santana@gmail.com"},
-	}
-
-	stdSet = template.New("base")
-)
-
-type devNull struct{}
-
-func (*devNull) Write(_ []byte) (int, error) {
-	return 0, nil
-}
-
-func dummy(a string) string {
-	return a
-}
-
-func init() {
-	stdSet.Funcs(template.FuncMap{"dummy": dummy})
-	_, err := stdSet.Parse(`
-		{{define "actionNode_dummy"}}hello {{dummy "WORLD"}}{{end}}
-		{{define "noAllocFn"}}hello {{ "José" }} {{1}} {{ "José" }} {{end}}
-		{{define "rangeOverUsers_Set"}}{{range $index,$val := . }}{{$index}}:{{$val.Name}}-{{$val.Email}}{{end}}{{end}}
-		{{define "rangeOverUsers"}}{{range . }}{{.Name}}-{{.Email}}{{end}}{{end}}
-	`)
-	if err != nil {
-		println(err.Error())
-	}
-
-	JetTestingSet.AddGlobal("dummy", dummy)
-	JetTestingSet.LoadTemplate("actionNode_dummy", `hello {{dummy("WORLD")}}`)
-	JetTestingSet.LoadTemplate("noAllocFn", `hello {{ "José" }} {{1}} {{ "José" }}`)
-	JetTestingSet.LoadTemplate("rangeOverUsers", `{{range .}}{{.Name}}-{{.Email}}{{end}}`)
-	JetTestingSet.LoadTemplate("rangeOverUsers_Set", `{{range index,user:= . }}{{index}}{{user.Name}}-{{user.Email}}{{end}}`)
-
-	JetTestingSet.LoadTemplate("BenchNewBlock", "{{ block col(md=12,offset=0) }}\n<div class=\"col-md-{{md}} col-md-offset-{{offset}}\">{{ yield content }}</div>\n\t\t{{ end }}\n\t\t{{ block row(md=12) }}\n<div class=\"row {{md}}\">{{ yield content }}</div>\n\t\t{{ content }}\n<div class=\"col-md-1\"></div>\n<div class=\"col-md-1\"></div>\n<div class=\"col-md-1\"></div>\n\t\t{{ end }}\n\t\t{{ block header() }}\n<div class=\"header\">\n\t{{ yield row() content}}\n\t\t{{ yield col(md=6) content }}\n{{ yield content }}\n\t\t{{end}}\n\t{{end}}\n</div>\n\t\t{{content}}\n<h1>Hey</h1>\n\t\t{{ end }}")
-}
-
-func RunJetTest(t *testing.T, variables VarMap, context interface{}, testName, testContent, testExpected string) {
-	RunJetTestWithSet(t, JetTestingSet, variables, context, testName, testContent, testExpected)
-}
-
-func RunJetTestWithSet(t *testing.T, set *Set, variables VarMap, context interface{}, testName, testContent, testExpected string) {
-	var (
-		tt  *Template
-		err error
-	)
-
-	if testContent != "" {
-		tt, err = set.LoadTemplate(testName, testContent)
-	} else {
-		tt, err = set.GetTemplate(testName)
-	}
-
-	if err != nil {
-		t.Errorf("Parsing error: %s %s %s", err.Error(), testName, testContent)
-		return
-	}
-	RunJetTestWithTemplate(t, tt, variables, context, testExpected)
-}
-
-func RunJetTestWithTemplate(t *testing.T, tt *Template, variables VarMap, context interface{}, testExpected string) {
-	if testing.RunTests(func(pat, str string) (bool, error) {
-		return true, nil
-	}, []testing.InternalTest{
-		{
-			Name: fmt.Sprintf("\tJetTest(%s)", tt.Name),
-			F: func(t *testing.T) {
-				var buf bytes.Buffer
-				err := tt.Execute(&buf, variables, context)
-				if err != nil {
-					t.Errorf("Eval error: %q executing %s", err.Error(), tt.Name)
-					return
-				}
-				result := strings.Replace(buf.String(), "\r\n", "\n", -1)
-				if result != testExpected {
-					t.Errorf("Result error expected %q got %q on %s", testExpected, result, tt.Name)
-				}
-			},
-		},
-	}) == false {
-		t.Fail()
-	}
-}
-
-func TestEvalTextNode(t *testing.T) {
-	RunJetTest(t, nil, nil, "textNode", `hello {*Buddy*} World`, `hello  World`)
-}
+// mock data
 
 type User struct {
 	Name, Email string
@@ -154,6 +38,84 @@ func (user *User) GetName() string {
 	return user.Name
 }
 
+var users = []*User{
+	{"Mario Santos", "mario@gmail.com"},
+	{"Joel Silva", "joelsilva@gmail.com"},
+	{"Luis Santana", "luis.santana@gmail.com"},
+	{"Luis Santana", "luis.santana@gmail.com"},
+	{"Mario Santos", "mario@gmail.com"},
+	{"Joel Silva", "joelsilva@gmail.com"},
+	{"Luis Santana", "luis.santana@gmail.com"},
+	{"Luis Santana", "luis.santana@gmail.com"},
+	{"Mario Santos", "mario@gmail.com"},
+	{"Joel Silva", "joelsilva@gmail.com"},
+	{"Luis Santana", "luis.santana@gmail.com"},
+	{"Luis Santana", "luis.santana@gmail.com"},
+	{"Mario Santos", "mario@gmail.com"},
+	{"Joel Silva", "joelsilva@gmail.com"},
+	{"Luis Santana", "luis.santana@gmail.com"},
+	{"Luis Santana", "luis.santana@gmail.com"},
+	{"Mario Santos", "mario@gmail.com"},
+	{"Joel Silva", "joelsilva@gmail.com"},
+	{"Luis Santana", "luis.santana@gmail.com"},
+	{"Luis Santana", "luis.santana@gmail.com"},
+	{"Mario Santos", "mario@gmail.com"},
+	{"Joel Silva", "joelsilva@gmail.com"},
+	{"Luis Santana", "luis.santana@gmail.com"},
+	{"Luis Santana", "luis.santana@gmail.com"},
+}
+
+// setup
+
+func prepareJet(tb testing.TB, path, content string) *Set {
+	set := NewSet(nil, "")
+
+	_, err := set.Cache(path, content)
+	if err != nil {
+		tb.Fatal(err)
+	}
+
+	return set
+}
+
+func run(t *testing.T, tmplPath, tmplContent string, vars VarMap, context interface{}, expected string) {
+	set := prepareJet(t, tmplPath, tmplContent)
+	runWithSet(t, tmplPath, set, vars, context, expected)
+}
+
+func runWithSet(t *testing.T, tmplPath string, set *Set, vars VarMap, context interface{}, expected string) {
+	tmpl, err := set.GetTemplate(tmplPath)
+	if err != nil {
+		t.Errorf("error getting template %s: %v", tmplPath, err)
+		return
+	}
+
+	var buf bytes.Buffer
+	err = tmpl.Execute(&buf, vars, context)
+	if err != nil {
+		t.Errorf("error executing %s: %v", tmplPath, err)
+		return
+	}
+
+	output := buf.String()
+	output = strings.Replace(output, "\r\n", "\n", -1)
+
+	if output != expected {
+		t.Errorf("in %s: expected %q, but got %q", tmplPath, expected, output)
+	}
+}
+
+func mustCache(t *testing.T, set *Set, path, content string) {
+	_, err := set.Cache(path, content)
+	if err != nil {
+		t.Errorf("could not cache template %s (%s) in set: %v", path, content, err)
+	}
+}
+
+func TestEvalTextNode(t *testing.T) {
+	run(t, "/text", `hello {*Buddy*} World`, nil, nil, `hello  World`)
+}
+
 func TestEvalActionNode(t *testing.T) {
 	var data = make(VarMap)
 
@@ -161,403 +123,362 @@ func TestEvalActionNode(t *testing.T) {
 		"José Santos", "email@example.com",
 	})
 
-	RunJetTest(t, nil, nil, "actionNode", `hello {{"world"}}`, `hello world`)
-	RunJetTest(t, data, nil, "actionNode_func", `hello {{lower: "WORLD"}}`, `hello world`)
-	RunJetTest(t, data, nil, "actionNode_funcPipe", `hello {{lower: "WORLD" |upper}}`, `hello WORLD`)
-	RunJetTest(t, data, nil, "actionNode_funcPipeArg", `hello {{lower: "WORLD-" |upper|repeat: 2}}`, `hello WORLD-WORLD-`)
-	RunJetTest(t, data, nil, "actionNode_Field", `Oi {{ user.Name }}`, `Oi José Santos`)
-	RunJetTest(t, data, nil, "actionNode_Field2", `Oi {{ user.Name }}<{{ user.Email }}>`, `Oi José Santos<email@example.com>`)
-	RunJetTest(t, data, nil, "actionNode_Method", `Oi {{ user.Format: "%s<%s>" }}`, `Oi José Santos<email@example.com>`)
+	run(t, "/action", `hello {{"world"}}`, nil, nil, `hello world`)
 
-	RunJetTest(t, data, nil, "actionNode_Add", `{{ 2+1 }}`, fmt.Sprint(2+1))
-	RunJetTest(t, data, nil, "actionNode_Add3", `{{ 2+1+4 }}`, fmt.Sprint(2+1+4))
-	RunJetTest(t, data, nil, "actionNode_Add3Minus", `{{ 2+1+4-3 }}`, fmt.Sprint(2+1+4-3))
+	run(t, "/func", `hello {{lower: "WORLD"}}`, data, nil, `hello world`)
+	run(t, "/func/pipe", `hello {{lower: "WORLD" |upper}}`, data, nil, `hello WORLD`)
+	run(t, "/func/pipe_with_arg", `hello {{lower: "WORLD-" |upper|repeat: 2}}`, data, nil, `hello WORLD-WORLD-`)
+	run(t, "/var/field", `Oi {{ user.Name }}`, data, nil, `Oi José Santos`)
+	run(t, "/var/method", `Oi {{ user.Format: "%s<%s>" }}`, data, nil, `Oi José Santos<email@example.com>`)
 
-	RunJetTest(t, data, nil, "actionNode_AddIntString", `{{ 2+"1" }}`, "3")
-	RunJetTest(t, data, nil, "actionNode_AddStringInt", `{{ "1"+2 }}`, "12")
+	run(t, "/negative_number", `{{ -5 }}`, nil, nil, "-5")
 
-	RunJetTest(t, data, nil, "actionNode_NumberNegative", `{{ -5 }}`, "-5")
-	RunJetTest(t, data, nil, "actionNode_NumberNegative_1", `{{ 1 + -5 }}`, fmt.Sprint(1+-5))
+	run(t, "/add/simple", `{{ 2+1 }}`, nil, nil, fmt.Sprint(2+1))
+	run(t, "/add/multiple", `{{ 2+1+4 }}`, nil, nil, fmt.Sprint(2+1+4))
+	run(t, "/add/multiple_with_sub", `{{ 2+1+4-3 }}`, nil, nil, fmt.Sprint(2+1+4-3))
+	run(t, "/add/int_and_string", `{{ 2+"1" }}`, nil, nil, "3")
+	run(t, "/add/string_and_int", `{{ "1"+2 }}`, nil, nil, "12")
+	run(t, "/add/negative_number", `{{ 1 + -5 }}`, nil, nil, fmt.Sprint(1+-5))
 
-	//this is an error RunJetTest(t, data, nil, "actionNode_AddStringInt", `{{ "1"-2 }}`, "12")
+	run(t, "/mult/simple", `{{ 4*4 }}`, nil, nil, fmt.Sprint(4*4))
+	run(t, "/mult/after_add", `{{ 2+4*4 }}`, nil, nil, fmt.Sprint(2+4*4))
+	run(t, "/mult/before_add", `{{ 4*2+4 }}`, nil, nil, fmt.Sprint(4*2+4))
+	run(t, "/mult/between_add", `{{ 2+4*2+4 }}`, nil, nil, fmt.Sprint(2+4*2+4))
+	run(t, "/mult/float", `{{ 1.23*1 }}`, nil, nil, fmt.Sprint(1*1.23))
+	run(t, "/mod/simple", `{{ 3%2 }}`, nil, nil, fmt.Sprint(3%2))
+	run(t, "/mult/before_mod", `{{ (1*3)%2 }}`, nil, nil, fmt.Sprint((1*3)%2))
+	run(t, "/mult/before_div_mod", `{{ (2*5)/ 3 %1 }}`, nil, nil, fmt.Sprint((2*5)/3%1))
 
-	RunJetTest(t, data, nil, "actionNode_Mult", `{{ 4*4 }}`, fmt.Sprint(4*4))
-	RunJetTest(t, data, nil, "actionNode_MultAdd", `{{ 2+4*4 }}`, fmt.Sprint(2+4*4))
-	RunJetTest(t, data, nil, "actionNode_MultAdd1", `{{ 4*2+4 }}`, fmt.Sprint(4*2+4))
-	RunJetTest(t, data, nil, "actionNode_MultAdd2", `{{ 2+4*2+4 }}`, fmt.Sprint(2+4*2+4))
-	RunJetTest(t, data, nil, "actionNode_MultFloat", `{{ 1.23*1 }}`, fmt.Sprint(1*1.23))
-	RunJetTest(t, data, nil, "actionNode_Mod", `{{ 3%2 }}`, fmt.Sprint(3%2))
-	RunJetTest(t, data, nil, "actionNode_MultMod", `{{ (1*3)%2 }}`, fmt.Sprint((1*3)%2))
-	RunJetTest(t, data, nil, "actionNode_MultDivMod", `{{ (2*5)/ 3 %1 }}`, fmt.Sprint((2*5)/3%1))
+	run(t, "/comparison/num/eq", `{{ (2*5)==10 }}`, nil, nil, fmt.Sprint((2*5) == 10))
+	run(t, "/comparison/num/neq", `{{ (2*5)==5 }}`, nil, nil, fmt.Sprint((2*5) == 5))
+	run(t, "/comparison/bool/eq", `{{ (2*5)==5 || false }}`, nil, nil, fmt.Sprint((2*5) == 5 || false))
+	run(t, "/comparison/bool/neq", `{{ (2*5)==5 || true }}`, nil, nil, fmt.Sprint((2*5) == 5 || true))
 
-	RunJetTest(t, data, nil, "actionNode_Comparation", `{{ (2*5)==10 }}`, fmt.Sprint((2*5) == 10))
-	RunJetTest(t, data, nil, "actionNode_Comparatation2", `{{ (2*5)==5 }}`, fmt.Sprint((2*5) == 5))
-	RunJetTest(t, data, nil, "actionNode_Logical", `{{ (2*5)==5 || true }}`, fmt.Sprint((2*5) == 5 || true))
-	RunJetTest(t, data, nil, "actionNode_Logical2", `{{ (2*5)==5 || false }}`, fmt.Sprint((2*5) == 5 || false))
+	run(t, "/comparison/num/gt", `{{ 5*5 > 2*12.5 }}`, nil, nil, fmt.Sprint(5*5 > 2*12.5))
+	run(t, "/comparison/num/gte", `{{ 5*5 >= 2*12.5 }}`, nil, nil, fmt.Sprint(5*5 >= 2*12.5))
 
-	RunJetTest(t, data, nil, "actionNode_NumericCmp", `{{ 5*5 > 2*12.5 }}`, fmt.Sprint(5*5 > 2*12.5))
-	RunJetTest(t, data, nil, "actionNode_NumericCmp1", `{{ 5*5 >= 2*12.5 }}`, fmt.Sprint(5*5 >= 2*12.5))
-	RunJetTest(t, data, nil, "actionNode_NumericCmp1", `{{ 5 * 5 > 2 * 12.5 == 5 * 5 > 2 * 12.5 }}`, fmt.Sprint((5*5 > 2*12.5) == (5*5 > 2*12.5)))
+	run(t, "/comparison/mixed", `{{ 5 * 5 > 2 * 12.5 == 5 * 5 > 2 * 12.5 }}`, nil, nil, fmt.Sprint((5*5 > 2*12.5) == (5*5 > 2*12.5)))
 }
 
-func TestEvalIfNode(t *testing.T) {
-	var data = make(VarMap)
-	data.Set("lower", strings.ToLower)
-	data.Set("upper", strings.ToUpper)
-	data.Set("repeat", strings.Repeat)
-
-	data.Set("user", &User{
-		"José Santos", "email@example.com",
+func TestEvalIf(t *testing.T) {
+	data := VarMap{}.Set("user", &User{
+		Name:  "José Santos",
+		Email: "email@example.com",
 	})
 
-	RunJetTest(t, data, nil, "ifNode_simples", `{{if true}}hello{{end}}`, `hello`)
-	RunJetTest(t, data, nil, "ifNode_else", `{{if false}}hello{{else}}world{{end}}`, `world`)
-	RunJetTest(t, data, nil, "ifNode_elseif", `{{if false}}hello{{else if true}}world{{end}}`, `world`)
-	RunJetTest(t, data, nil, "ifNode_elseif_else", `{{if false}}hello{{else if false}}world{{else}}buddy{{end}}`, `buddy`)
-	RunJetTest(t, data, nil, "ifNode_string_comparison", `{{user.Name}} (email: {{user.Email}}): {{if user.Email == "email2@example.com"}}email is email2@example.com{{else}}email is not email2@example.com{{end}}`, `José Santos (email: email@example.com): email is not email2@example.com`)
-
+	run(t, "/if", `{{if true}}hello{{end}}`, data, nil, `hello`)
+	run(t, "/if/else", `{{if false}}hello{{else}}world{{end}}`, data, nil, `world`)
+	run(t, "/if/elseif", `{{if false}}hello{{else if true}}world{{end}}`, data, nil, `world`)
+	run(t, "/if/elseif/else", `{{if false}}hello{{else if false}}world{{else}}buddy{{end}}`, data, nil, `buddy`)
+	run(t, "/if_string/else", `{{user.Name}} (email: {{user.Email}}): {{if user.Email == "email2@example.com"}}email is email2@example.com{{else}}email is not email2@example.com{{end}}`, data, nil, `José Santos (email: email@example.com): email is not email2@example.com`)
 }
 
 func TestEvalBlockYieldIncludeNode(t *testing.T) {
-	var data = make(VarMap)
 
-	data.Set("user", &User{
+	vars := VarMap{}.Set("user", &User{
 		"José Santos", "email@example.com",
 	})
 
-	RunJetTest(t, data, nil, "Block_simple", `{{block hello() "Buddy" }}Hello {{ . }}{{end}},{{yield hello() user.Name}}`, `Hello Buddy,Hello José Santos`)
-	RunJetTest(t, data, nil, "Block_Extends", `{{extends "Block_simple"}}{{block hello() "Buddy" }}Hey {{ . }}{{end}}`, `Hey Buddy,Hey José Santos`)
-	RunJetTest(t, data, nil, "Block_Import", `{{import "Block_simple"}}{{yield hello() "Buddy"}}`, `Hello Buddy`)
-	RunJetTest(t, data, nil, "Block_Import", `{{import "Block_simple"}}{{yield hello() "Buddy"}}`, `Hello Buddy`)
+	set := prepareJet(t, "/block", `{{block hello() "Buddy" }}Hello {{ . }}{{end}}`)
 
-	JetTestingSet.LoadTemplate("Block_ImportInclude1", `{{yield hello() "Buddy"}}`)
-	RunJetTest(t, data, nil, "Block_ImportInclude", `{{ import "Block_simple"}}{{include "Block_ImportInclude1"}}`, `Hello Buddy`)
-	RunJetTest(t, data, nil,
-		"Block_Content",
-		"{{ block col(md=12,offset=0) }}\n<div class=\"col-md-{{md}} col-md-offset-{{offset}}\">{{ yield content }}</div>\n\t\t{{ end }}\n\t\t{{ block row(md=12) }}\n<div class=\"row {{md}}\">{{ yield content }}</div>\n\t\t{{ content }}\n<div class=\"col-md-1\"></div>\n<div class=\"col-md-1\"></div>\n<div class=\"col-md-1\"></div>\n\t\t{{ end }}\n\t\t{{ block header() }}\n<div class=\"header\">\n\t{{ yield row() content}}\n\t\t{{ yield col(md=6) content }}\n{{ yield content }}\n\t\t{{end}}\n\t{{end}}\n</div>\n\t\t{{content}}\n<h1>Hey</h1>\n\t\t{{ end }}",
-		"\n<div class=\"col-md-12 col-md-offset-0\"></div>\n\t\t\n\t\t\n<div class=\"row 12\">\n<div class=\"col-md-1\"></div>\n<div class=\"col-md-1\"></div>\n<div class=\"col-md-1\"></div>\n\t\t</div>\n\t\t\n\t\t\n<div class=\"header\">\n\t\n<div class=\"row 12\">\n\t\t\n<div class=\"col-md-6 col-md-offset-0\">\n\n<h1>Hey</h1>\n\t\t\n\t\t</div>\n\t\t\n\t</div>\n\t\t\n</div>\n\t\t",
-	)
+	runWithSet(t, "/block", set, vars, nil, `Hello Buddy`)
 
-	JetTestingSet.LoadTemplate("BlockContentLib", "{{block col(columns)}}\n    <div class=\"col {{columns}}\">{{yield content}}</div>\n{{end}}\n{{block row(cols=\"\")}}\n    <div class=\"row\">\n        {{if len(cols) > 0}}\n            {{yield col(columns=cols) content}}{{yield content}}{{end}}\n        {{else}}\n            {{yield content}}\n        {{end}}\n    </div>\n{{end}}")
-	RunJetTest(t, nil, nil, "BlockContentParam",
-		`{{import "BlockContentLib"}}{{yield row(cols="12") content}}{{cols}}{{end}}`,
-		"\n    <div class=\"row\">\n        \n            \n    <div class=\"col 12\">12</div>\n\n        \n    </div>\n")
+	mustCache(t, set, "/block_yield", `{{block hello() "Buddy" }}Hello {{ . }}{{end}}, {{yield hello() user.Name}}`)
+	runWithSet(t, "/block_yield", set, vars, nil, `Hello Buddy, Hello José Santos`)
 
-	JetTestingSet.LoadTemplate("BlockContentLib2", `
-		{{block col(
-			columns,
-		)}}
-			<div class="col {{columns}}">{{yield content}}</div>
-		{{end}}
-		{{block row(
-			cols="",
-			rowClass="",
-		)}}
-			<div class="row {{ rowClass }}">
-				{{if len(cols) > 0}}
-					{{yield col(columns=cols) content}}
-						{{yield content}}
-					{{end}}
-				{{else}}
-					{{yield content}}
-				{{end}}
-			</div>
-		{{end}}
-	`)
-	RunJetTest(t, nil, nil, "BlockContentParam2",
-		`{{import "BlockContentLib2"}}
-		{{yield row(
-			cols="12",
-			rowClass="highlight-row",
-		) content}}
-			{{cols}}
-		{{end}}`,
-		"\n\t\t\t<div class=\"row highlight-row\">\n\t\t\t\t\n\t\t\t\t\t\n\t\t\t<div class=\"col 12\">\n\t\t\t\t\t\t\n\t\t\t12\n\t\t\n\t\t\t\t\t</div>\n\t\t\n\t\t\t\t\n\t\t\t</div>\n\t\t",
-	)
+	mustCache(t, set, "/extend/block_yield/block", `{{extends "/block_yield"}}{{block hello() "Buddy" }}Hey {{ . }}{{end}}`)
+	runWithSet(t, "/extend/block_yield/block", set, vars, nil, `Hey Buddy, Hey José Santos`)
+
+	mustCache(t, set, "/import/block/yield", `{{import "/block"}}{{yield hello() "Buddy"}}`)
+	runWithSet(t, "/import/block/yield", set, vars, nil, `Hello Buddy`)
+
+	mustCache(t, set, "/yield", `{{yield hello() "Buddy"}}`)
+	mustCache(t, set, "/import/block/include/yield", `{{import "/block"}}{{include "/yield"}}`)
+	runWithSet(t, "/import/block/include/yield", set, vars, nil, `Hello Buddy`)
+
+	mustCache(t, set, "/block/yield_content", `{{ block foo(bar=2) }}bar: {{ bar }} content: {{ yield content }}{{ end }}, {{ block header() }}{{ yield foo(bar=4) content }}some content{{ end }}{{ end }}`)
+	runWithSet(t, "/block/yield_content", set, vars, nil, `bar: 2 content: , bar: 4 content: some content`)
 }
 
-func TestEvalRangeNode(t *testing.T) {
-
-	var data = make(VarMap)
-
-	data.Set("users", []User{
+func TestEvalRange(t *testing.T) {
+	users := []User{
 		{"Mario Santos", "mario@gmail.com"},
 		{"Joel Silva", "joelsilva@gmail.com"},
 		{"Luis Santana", "luis.santana@gmail.com"},
-	})
+	}
 
-	const resultString = `<h1>Mario Santos<small>mario@gmail.com</small></h1><h1>Joel Silva<small>joelsilva@gmail.com</small></h1><h1>Luis Santana<small>luis.santana@gmail.com</small></h1>`
-	RunJetTest(t, data, nil, "Range_Expression", `{{range users}}<h1>{{.Name}}<small>{{.Email}}</small></h1>{{end}}`, resultString)
-	RunJetTest(t, data, nil, "Range_ExpressionValue", `{{range user:=users}}<h1>{{user.Name}}<small>{{user.Email}}</small></h1>{{end}}`, resultString)
-	var resultString2 = `<h1>0: Mario Santos<small>mario@gmail.com</small></h1><h1>Joel Silva<small>joelsilva@gmail.com</small></h1><h1>2: Luis Santana<small>luis.santana@gmail.com</small></h1>`
-	RunJetTest(t, data, nil, "Range_ExpressionValueIf", `{{range i, user:=users}}<h1>{{if i == 0 || i == 2}}{{i}}: {{end}}{{user.Name}}<small>{{user.Email}}</small></h1>{{end}}`, resultString2)
+	vars := VarMap{}.Set("users", users)
+
+	run(t, "/range/var_as_context",
+		`{{range users}}{{.Name}}: {{.Email}}; {{end}}`,
+		vars, nil,
+		`Mario Santos: mario@gmail.com; Joel Silva: joelsilva@gmail.com; Luis Santana: luis.santana@gmail.com; `)
+	run(t, "/range/var_as_var",
+		`{{range u := users}}{{u.Name}}: {{u.Email}}; {{end}}`,
+		vars, nil,
+		`Mario Santos: mario@gmail.com; Joel Silva: joelsilva@gmail.com; Luis Santana: luis.santana@gmail.com; `)
+	run(t, "/range/context_as_context",
+		`{{range .}}{{.Name}}: {{.Email}}; {{end}}`,
+		nil, users,
+		`Mario Santos: mario@gmail.com; Joel Silva: joelsilva@gmail.com; Luis Santana: luis.santana@gmail.com; `)
+	run(t, "/range/context_as_var",
+		`{{range u := .}}{{u.Name}}: {{u.Email}}; {{end}}`,
+		nil, users,
+		`Mario Santos: mario@gmail.com; Joel Silva: joelsilva@gmail.com; Luis Santana: luis.santana@gmail.com; `)
 }
 
-func TestEvalDefaultFuncs(t *testing.T) {
-	RunJetTest(t, nil, nil, "DefaultFuncs_safeHtml", `<h1>{{"<h1>Hello Buddy!</h1>" |safeHtml}}</h1>`, `<h1>&lt;h1&gt;Hello Buddy!&lt;/h1&gt;</h1>`)
-	RunJetTest(t, nil, nil, "DefaultFuncs_safeHtml2", `<h1>{{safeHtml: "<h1>Hello Buddy!</h1>"}}</h1>`, `<h1>&lt;h1&gt;Hello Buddy!&lt;/h1&gt;</h1>`)
-	RunJetTest(t, nil, nil, "DefaultFuncs_htmlEscape", `<h1>{{html: "<h1>Hello Buddy!</h1>"}}</h1>`, `<h1>&lt;h1&gt;Hello Buddy!&lt;/h1&gt;</h1>`)
-	RunJetTest(t, nil, nil, "DefaultFuncs_urlEscape", `<h1>{{url: "<h1>Hello Buddy!</h1>"}}</h1>`, `<h1>%3Ch1%3EHello+Buddy%21%3C%2Fh1%3E</h1>`)
+func TestEvalDefaults(t *testing.T) {
+	run(t, "/defaults/len/string/literal", `{{len("111")}}`, nil, nil, "3")
+	run(t, "/defaults/len/slice/context", `{{len(.)}}`, nil, []int{1, 2, 3}, "3")
 
-	RunJetTest(t, nil, &User{"Mario Santos", "mario@gmail.com"}, "DefaultFuncs_json", `{{. |writeJson}}`, "{\"Name\":\"Mario Santos\",\"Email\":\"mario@gmail.com\"}\n")
+	run(t, "/defaults/safe_html", `<h1>{{"<h1>Hello Buddy!</h1>" |safeHtml}}</h1>`, nil, nil, `<h1>&lt;h1&gt;Hello Buddy!&lt;/h1&gt;</h1>`)
+	run(t, "/defaults/safe_html/2", `<h1>{{safeHtml: "<h1>Hello Buddy!</h1>"}}</h1>`, nil, nil, `<h1>&lt;h1&gt;Hello Buddy!&lt;/h1&gt;</h1>`)
+	run(t, "/defaults/html_escape", `<h1>{{html: "<h1>Hello Buddy!</h1>"}}</h1>`, nil, nil, `<h1>&lt;h1&gt;Hello Buddy!&lt;/h1&gt;</h1>`)
+	run(t, "/defaults/url_escape", `<h1>{{url: "<h1>Hello Buddy!</h1>"}}</h1>`, nil, nil, `<h1>%3Ch1%3EHello+Buddy%21%3C%2Fh1%3E</h1>`)
 
-	RunJetTest(t, nil, nil, "DefaultFuncs_replace", `{{replace("My Name Is", " ", "_", -1)}}`, "My_Name_Is")
-	RunJetTest(t, nil, nil, "DefaultFuncs_replace_multiline_statement",
+	run(t, "/defaults/write_json", `{{. |writeJson}}`, nil, &User{"Mario Santos", "mario@gmail.com"}, "{\"Name\":\"Mario Santos\",\"Email\":\"mario@gmail.com\"}\n")
+
+	run(t, "/defaults/replace", `{{replace("My Name Is", " ", "_", -1)}}`, nil, nil, "My_Name_Is")
+	run(t, "/defaults/replace/multiline",
 		`{{replace("My Name Is II",
 			" ",
 			"_",
 			-1,
-		)}}`,
+		)}}`, nil, nil,
 		"My_Name_Is_II",
 	)
-}
 
-func TestEvalIssetAndTernaryExpression(t *testing.T) {
-	var data = make(VarMap)
-	data.Set("title", "title")
-	RunJetTest(t, nil, nil, "IssetExpression_1", `{{isset(value)}}`, "false")
-	RunJetTest(t, data, nil, "IssetExpression_2", `{{isset(title)}}`, "true")
+	vars := VarMap{}.Set("title", "title")
+	run(t, "/defaults/isset/var/fail", `{{isset(value)}}`, vars, nil, "false")
+	run(t, "/defaults/isset/var/ok", `{{isset(title)}}`, vars, nil, "true")
+	run(t, "/defaults/isset/var/field/fail", `{{isset(title.Get)}}`, vars, nil, "false")
+
 	user := &User{
 		"José Santos", "email@example.com",
 	}
-	RunJetTest(t, nil, user, "IssetExpression_3", `{{isset(.Name)}}`, "true")
-	RunJetTest(t, nil, user, "IssetExpression_4", `{{isset(.Names)}}`, "false")
-	RunJetTest(t, data, user, "IssetExpression_5", `{{isset(title)}}`, "true")
-	RunJetTest(t, data, user, "IssetExpression_6", `{{isset(title.Get)}}`, "false")
+	run(t, "/defaults/isset/context/fail", `{{isset(.NotSet)}}`, nil, user, "false")
+	run(t, "/defaults/isset/context/ok", `{{isset(.Name)}}`, nil, user, "true")
+	run(t, "/defaults/isset/context/field/fail", `{{isset(.Name.NotSet)}}`, nil, user, "false")
 
-	RunJetTest(t, nil, user, "TernaryExpression_4", `{{isset(.Names)?"All names":"no names"}}`, "no names")
-
-	RunJetTest(t, nil, user, "TernaryExpression_5", `{{isset(.Name)?"All names":"no names"}}`, "All names")
-	RunJetTest(t, data, user, "TernaryExpression_6", `{{ isset(form) ? form.Get("value") : "no form" }}`, "no form")
-}
-
-func TestEvalIndexExpression(t *testing.T) {
-	RunJetTest(t, nil, []string{"111", "222"}, "IndexExpressionSlice_1", `{{.[1]}}`, `222`)
-	RunJetTest(t, nil, map[string]string{"name": "value"}, "IndexExpressionMap_1", `{{.["name"]}}`, "value")
-	RunJetTest(t, nil, map[string]string{"name": "value"}, "IndexExpressionMap_2", `{{.["non_existant_key"]}}`, "")
-	RunJetTest(t, nil, map[string]string{"name": "value"}, "IndexExpressionMap_3", `{{isset(.["non_existant_key"]) ? "key does exist" : "key does not exist"}}`, "key does not exist")
-	RunJetTest(t, nil, map[string]string{"name": "value"}, "IndexExpressionMap_4", `{{if v, ok := .["name"]; ok}}key does exist and has the value '{{v}}'{{else}}key does not exist{{end}}`, "key does exist and has the value 'value'")
-	RunJetTest(t, nil, map[string]string{"name": "value"}, "IndexExpressionMap_5", `{{if v, ok := .["non_existant_key"]; ok}}key does exist and has the value '{{v}}'{{else}}key does not exist{{end}}`, "key does not exist")
-	RunJetTest(t, nil, map[string]interface{}{"nested": map[string]string{"name": "value"}}, "IndexExpressionMap_6", `{{.["nested"].name}}`, "value")
-
-	vars := make(VarMap)
-	vars.Set("nested", map[string]interface{}{"key": "nested", "nested": map[string]interface{}{"nested": map[string]interface{}{"nested": map[string]interface{}{"name": "value", "strings": []string{"hello"}, "arr": []interface{}{"hello"}, "nil": nil}}}})
-
-	//RunJetTest(t, vars, nil, "IndexExpressionMap_6", `{{nested.nested.nested.nested.name}}`, "value")
-	// todo: this test is failing with race detector enabled, but looks like a bug when running with the race detector enabled
-	RunJetTest(t, vars, nil, "IndexExpressionMap_7", `{{nested.nested.nested.nested.strings[0]}}`, "hello")
-	RunJetTest(t, vars, nil, "IndexExpressionMap_8", `{{nested.nested.nested.nested.arr[0]}}`, "hello")
-	RunJetTest(t, vars, nil, "IndexExpressionMap_8_1", `{{nested.nested.nested.nested["arr"][0]}}`, "hello")
-	RunJetTest(t, vars, nil, "IndexExpressionMap_9", `{{nested[nested.key].nested.nested.name}}`, "value")
-	RunJetTest(t, vars, nil, "IndexExpressionMap_10", `{{nested["nested"].nested.nested.name}}`, "value")
-	RunJetTest(t, vars, nil, "IndexExpressionMap_11", `{{nested.nested.nested["nested"].name}}`, "value")
-	RunJetTest(t, vars, nil, "IndexExpressionMap_12", `{{nested.nested.nested["nested"]["strings"][0]}}`, "hello")
-	RunJetTest(t, vars, nil, "IndexExpressionMap_13", `{{nested.nested.nested["nested"]["arr"][0]}}`, "hello")
-	RunJetTest(t, vars, nil, "IndexExpressionMap_14", `{{nested["nested"].nested["nested"].name}}`, "value")
-	RunJetTest(t, vars, nil, "IndexExpressionMap_15", `{{nested["nested"]["nested"].nested.name}}`, "value")
-	RunJetTest(t, vars, nil, "IndexExpressionMap_16_1", `{{nested.nested.nested.nested.nil}}`, "<nil>")
-	RunJetTest(t, vars, nil, "IndexExpressionMap_16_2", `{{nested.nested.nested.nested["nil"]}}`, "<nil>")
-	RunJetTest(t, nil, &User{"José Santos", "email@example.com"}, "IndexExpressionStruct_1", `{{.[0]}}`, "José Santos")
-	RunJetTest(t, nil, &User{"José Santos", "email@example.com"}, "IndexExpressionStruct_2", `{{.["Email"]}}`, "email@example.com")
-}
-
-func TestEvalSliceExpression(t *testing.T) {
-	RunJetTest(t, nil, []string{"111", "222", "333", "444"}, "SliceExpressionSlice_1", `{{range .[1:]}}{{.}}{{end}}`, `222333444`)
-	RunJetTest(t, nil, []string{"111", "222", "333", "444"}, "SliceExpressionSlice_2", `{{range .[:2]}}{{.}}{{end}}`, `111222`)
-	RunJetTest(t, nil, []string{"111", "222", "333", "444"}, "SliceExpressionSlice_3", `{{range .[:]}}{{.}}{{end}}`, `111222333444`)
-	RunJetTest(t, nil, []string{"111", "222", "333", "444"}, "SliceExpressionSlice_4", `{{range .[0:2]}}{{.}}{{end}}`, `111222`)
-	RunJetTest(t, nil, []string{"111", "222", "333", "444"}, "SliceExpressionSlice_5", `{{range .[1:2]}}{{.}}{{end}}`, `222`)
-	RunJetTest(t, nil, []string{"111", "222", "333", "444"}, "SliceExpressionSlice_6", `{{range .[1:3]}}{{.}}{{end}}`, `222333`)
-
-	RunJetTest(t, nil, []string{"111"}, "SliceExpressionSlice_BugIndex", `{{range k,v:= . }}{{k}}{{end}}`, `0`)
-	RunJetTest(t, nil, []string{"111"}, "SliceExpressionSlice_IfLen", `{{if len(.) > 0}}{{.[0]}}{{end}}`, `111`)
-}
-
-type StringerType struct {
-	//
-}
-
-func (st *StringerType) String() string {
-	return "StringerType implements fmt.Stringer"
-}
-
-func TestEvalPointerExpressions(t *testing.T) {
-	var data = make(VarMap)
-	var s *string
-	data.Set("stringPointer", s)
-	RunJetTest(t, data, nil, "StringPointer_1", `{{ stringPointer }}`, "<nil>")
-
-	s2 := "test"
-	data.Set("stringPointer2", &s2)
-	RunJetTest(t, data, nil, "StringPointer_2", `{{ stringPointer2 }}`, "test")
-
-	i2 := 10
-	data.Set("intPointer2", &i2)
-	RunJetTest(t, data, nil, "IntPointer_2", `{{ intPointer2 }}`, "10")
-
-	var i *int
-	data.Set("intPointer", &i)
-	RunJetTest(t, data, nil, "IntPointer_i", `{{ intPointer }}`, "<nil>")
-
-	st := StringerType{}
-	data.Set("stringerType", &st) // stringerType won't be dereferenced
-	RunJetTest(t, data, nil, "StringerTypePointer", `{{ stringerType }}`, "StringerType implements fmt.Stringer")
-
-	st2 := &StringerType{}
-	data.Set("stringerType2", &st2) // stringerType2 will be dereferenced just once
-	RunJetTest(t, data, nil, "StringerTypePointer2", `{{ stringerType2 }}`, "StringerType implements fmt.Stringer")
-
-	u := User{
-		Name:  "Pablo Escobbar",
-		Email: "pablo.escobar@cartel.mx",
-	}
-	data.Set("user", &u) // user will be dereferenced once
-	RunJetTest(t, data, nil, "UserPointer", `{{ user }}`, "{Pablo Escobbar pablo.escobar@cartel.mx}")
-
-	u1 := &u
-	data.Set("user1", &u1) // user1 will be dereferenced twice
-	RunJetTest(t, data, nil, "UserPointer1", `{{ user1 }}`, "{Pablo Escobbar pablo.escobar@cartel.mx}")
-
-	u2 := &u1
-	data.Set("user2", &u2) // user2 will be dereferenced only twice
-	RunJetTest(t, data, nil, "UserPointer2", `{{ user2 }}`, "&{Pablo Escobbar pablo.escobar@cartel.mx}")
-}
-
-func TestEvalPointerLimitNumberOfDereferences(t *testing.T) {
-	var data = make(VarMap)
-
-	var i *int
-	data.Set("intPointer", &i)
-	RunJetTest(t, data, nil, "IntPointer_i", `{{ intPointer }}`, "<nil>")
-
-	j := &i
-	data.Set("intPointer", &j)
-	RunJetTest(t, data, nil, "IntPointer_j", `{{ intPointer }}`, "<nil>")
-}
-
-type Apple struct {
-	Flavor string
-}
-
-func (a *Apple) GetFlavor() string {
-	return a.Flavor
-}
-
-func (a *Apple) GetFlavorPtr() *string {
-	return &a.Flavor
-}
-
-func TestApple(t *testing.T) {
-
-	apples := map[string]*Apple{
-		"honeycrisp": {
-			Flavor: "crisp",
-		},
-		"red-delicious": {
-			Flavor: "poor",
-		},
-		"granny-smith": {
-			Flavor: "tart",
-		},
-	}
-
-	var data = make(VarMap)
-	data.SetFunc("GetAppleByName", func(a Arguments) reflect.Value {
-		name := a.Get(0).String()
-		return reflect.ValueOf(apples[name])
-	})
-
-	data.SetFunc("TellFlavor", func(a Arguments) reflect.Value {
-		apple := a.Get(0).Interface().(*Apple)
-		flav := apple.GetFlavor()
-		return reflect.ValueOf(flav)
-	})
-
-	RunJetTest(t, data, nil, "LookUpApple", `{{apple := GetAppleByName("honeycrisp")}}{{TellFlavor(apple)}}`, "crisp")
-}
-
-func TestEvalStructFieldPointerExpressions(t *testing.T) {
-	var data = make(VarMap)
-
-	type structWithPointers struct {
-		StringField *string
-		IntField    *int
-		StructField *structWithPointers
-	}
-
-	stringVal := "test"
-	intVal := 10
-	nestedStringVal := "nested"
-
-	s := structWithPointers{
-		StringField: &stringVal,
-		IntField:    &intVal,
-		StructField: &structWithPointers{
-			StringField: &nestedStringVal,
-		},
-	}
-	data.Set("structWithPointerFields", s)
-	RunJetTest(t, data, nil, "PointerFields_1", `{{ structWithPointerFields.IntField }}`, "10")
-	RunJetTest(t, data, nil, "PointerFields_2", `{{ structWithPointerFields.StructField.IntField }}`, "")
-	RunJetTest(t, data, nil, "PointerFields_3", `{{ structWithPointerFields.StringField }}`, "test")
-	RunJetTest(t, data, nil, "PointerFields_4", `{{ structWithPointerFields.StructField.StringField }}`, "nested")
-
-	s2 := structWithPointers{
-		StringField: &stringVal,
-		IntField:    &intVal,
-	}
-	data.Set("structWithPointerFields2", s2)
-	RunJetTest(t, data, nil, "PointerFields_5", `{{ structWithPointerFields2.IntField }}`, "10")
-	RunJetTest(t, data, nil, "PointerFields_6", `{{ structWithPointerFields2.StringField }}`, "test")
-	RunJetTest(t, data, nil, "PointerFields_7", `{{ structWithPointerFields2.StructField }}`, "")
-
-	var set = NewSet(nil, "./testData")
-	tt, err := set.parse("PointerFields_8", `{{ structWithPointerFields2.StructField.StringField }}`)
-	if err != nil {
-		t.Error(err)
-	}
-	buff := bytes.NewBuffer(nil)
-	err = tt.Execute(buff, data, nil)
-	if err == nil {
-		t.Error("expected evaluating field of nil structto fail with a runtime error but got nil")
-	}
-}
-
-func TestEvalBuiltinExpression(t *testing.T) {
-	var data = make(VarMap)
-	RunJetTest(t, data, nil, "LenExpression_1", `{{len("111")}}`, "3")
-	RunJetTest(t, data, nil, "LenExpression_2", `{{isset(data)?len(data):0}}`, "0")
-	RunJetTest(t, data, []string{"", "", "", ""}, "LenExpression_3", `{{len(.)}}`, "4")
-	data.Set(
-		"foo", map[string]interface{}{
+	context := map[string]interface{}{
+		"foo": map[string]interface{}{
 			"asd": map[string]string{
 				"bar": "baz",
 			},
 		},
-	)
-	RunJetTest(t, data, nil, "IsSetExpression_1", `{{isset(foo)}}`, "true")
-	RunJetTest(t, data, nil, "IsSetExpression_2", `{{isset(foo.asd)}}`, "true")
-	RunJetTest(t, data, nil, "IsSetExpression_3", `{{isset(foo.asd.bar)}}`, "true")
-	RunJetTest(t, data, nil, "IsSetExpression_4", `{{isset(asd)}}`, "false")
-	RunJetTest(t, data, nil, "IsSetExpression_5", `{{isset(foo.bar)}}`, "false")
-	RunJetTest(t, data, nil, "IsSetExpression_6", `{{isset(foo.asd.foo)}}`, "false")
-	RunJetTest(t, data, nil, "IsSetExpression_7", `{{isset(foo.asd.bar.xyz)}}`, "false")
+	}
+	run(t, "/defaults/isset/context/nested", `{{isset(.foo)}}`, nil, context, "true")
+	run(t, "/defaults/isset/context/nested/2", `{{isset(.foo.asd)}}`, nil, context, "true")
+	run(t, "/defaults/isset/context/nested/3", `{{isset(.foo.asd.bar)}}`, nil, context, "true")
+	run(t, "/defaults/isset/context/nested/fail", `{{isset(.asd)}}`, nil, context, "false")
+	run(t, "/defaults/isset/context/nested/fail/2", `{{isset(.foo.bar)}}`, nil, context, "false")
+	run(t, "/defaults/isset/context/nested/fail/3", `{{isset(.foo.asd.foo)}}`, nil, context, "false")
+	run(t, "/defaults/isset/context/nested/fail/4", `{{isset(.foo.asd.bar.xyz)}}`, nil, context, "false")
+}
+
+func TestEvalTernaryExpr(t *testing.T) {
+	vars := VarMap{}.
+		Set("yes", true).
+		Set("no", false)
+
+	run(t, "/ternary/fail", `{{no ? "yes" : "no"}}`, vars, nil, "no")
+	run(t, "/ternary/ok", `{{yes ? "yes" : "no"}}`, vars, nil, "yes")
+	// todo: make this work:
+	// run(t, "/ternary/unset_var", `{{not_set ? "yes" : "no"}}`, vars, nil, "no")
+}
+
+func TestEvalIndexExpr(t *testing.T) {
+	abc := "abc"
+	// run(t, "/index/string/context", `{{.[1]}}`, nil, abc, `b`)
+	// run(t, "/index/string/var", `{{abc[1]}}`, VarMap{}.Set("abc", abc), nil, `b`)
+
+	abcdef := []string{"abc", "def"}
+	run(t, "/index/slice/context", `{{.[1]}}`, nil, abcdef, `def`)
+	run(t, "/index/slice/var", `{{abcdef[1]}}`, VarMap{}.Set("abcdef", abcdef), nil, `def`)
+
+	abcdefghijkl := [][]string{{"abc", "def"}, {"ghi", "jkl"}}
+	run(t, "/index/slice/slice/context", `{{.[1][0]}}`, nil, abcdefghijkl, `ghi`)
+	run(t, "/index/slice/slice/var", `{{abcdefghijkl[1][0]}}`, VarMap{}.Set("abcdefghijkl", abcdefghijkl), nil, `ghi`)
+
+	m := map[string]string{"name": "value"}
+
+	run(t, "/index/map/brackets/context/ok", `{{.["name"]}}`, nil, m, "value")
+	run(t, "/index/map/brackets/context/fail", `{{.["non_existant_key"]}}`, nil, m, "")
+	run(t, "/index/map/brackets/context/two_values/ok", `{{ v, found := .["name"] }}'{{isset(v) ? v : ""}}', {{found}}`, nil, m, "'value', true")
+	run(t, "/index/map/brackets/context/two_values/fail", `{{ v, found := .["not_in_map"] }}'{{isset(v) ? v : ""}}', {{found}}`, nil, m, "'', false")
+
+	run(t, "/index/map/brackets/var/ok", `{{m["name"]}}`, VarMap{}.Set("m", m), nil, "value")
+	run(t, "/index/map/brackets/var/fail", `{{m["non_existant_key"]}}`, VarMap{}.Set("m", m), nil, "")
+	run(t, "/index/map/brackets/var/two_values/ok", `{{ v, found := m["name"] }}'{{isset(v) ? v : ""}}', {{found}}`, VarMap{}.Set("m", m), nil, "'value', true")
+	run(t, "/index/map/brackets/var/two_values/fail", `{{ v, found := m["not_in_map"] }}'{{isset(v) ? v : ""}}', {{found}}`, VarMap{}.Set("m", m), nil, "'', false")
+
+	user := User{"José Santos", "email@example.com"}
+
+	run(t, "/index/struct_context/brackets/num_field_index", `{{.[0]}}`, nil, user, "José Santos")
+	run(t, "/index/struct_context/brackets/field_name", `{{.["Email"]}}`, nil, user, "email@example.com")
+	run(t, "/index/struct_context/dots/field_name", `{{.Email}}`, nil, user, "email@example.com")
+
+	nested := map[string]map[string]map[string]map[string]map[string]interface{}{
+		"one": {
+			"two": {
+				"three": {
+					"four": {
+						"abc":          abc,
+						"abcdef":       abcdef,
+						"abcdefghijkl": abcdefghijkl,
+					},
+				},
+			},
+		},
+	}
+
+	run(t, "/index/nested/dots/map/string", `{{.one.two.three.four.abc}}`, nil, nested, "abc")
+	run(t, "/index/nested/dots/map/slice", `{{.one.two.three.four.abcdef[0]}}`, nil, nested, "abc")
+	run(t, "/index/nested/dots/map/slice/slice", `{{.one.two.three.four.abcdefghijkl[0][1]}}`, nil, nested, "def")
+	run(t, "/index/nested/mixed/map/string", `{{.one.two.three.four["abc"]}}`, nil, nested, "abc")
+	run(t, "/index/nested/mixed/map/string", `{{.one.two.three["four"].abc}}`, nil, nested, "abc")
+	run(t, "/index/nested/mixed/map/string", `{{.one.two["three"].four["abc"]}}`, nil, nested, "abc")
+	run(t, "/index/nested/mixed/map/string", `{{.one["two"].three.four.abc}}`, nil, nested, "abc")
+	run(t, "/index/nested/mixed/map/string", `{{.["one"].two["three"].four["abc"]}}`, nil, nested, "abc")
+}
+
+func TestEvalSliceExpr(t *testing.T) {
+	s := []string{"111", "222", "333", "444"}
+
+	run(t, "/slice/1_to_end", `{{range .[1:]}}{{.}}{{end}}`, nil, s, `222333444`)
+	run(t, "/slice/start_to_2", `{{range .[:2]}}{{.}}{{end}}`, nil, s, `111222`)
+	run(t, "/slice/start_to_end", `{{range .[:]}}{{.}}{{end}}`, nil, s, `111222333444`)
+	run(t, "/slice/0_to_2", `{{range .[0:2]}}{{.}}{{end}}`, nil, s, `111222`)
+	run(t, "/slice/1_to_2", `{{range .[1:2]}}{{.}}{{end}}`, nil, s, `222`)
+	run(t, "/slice/1_to_3", `{{range .[1:3]}}{{.}}{{end}}`, nil, s, `222333`)
+}
+
+type stringer struct{}
+
+func (s *stringer) String() string { return "implements fmt.Stringer" }
+
+func TestEvalPointerExpr(t *testing.T) {
+	vars := VarMap{}.
+		// Set("n", (interface{})(nil)).
+		Set("s", (*string)(nil)).
+		Set("i", (*int)(nil))
+
+	// todo:
+	// run(t, "/ptr/nil/interface", `{{ n }}`, vars, nil, "<nil>")
+	run(t, "/ptr/nil/string", `{{ s }}`, vars, nil, "<nil>")
+	run(t, "/ptr/nil/int", `{{ i }}`, vars, nil, "<nil>")
+
+	s := "foo"
+	s_ := &s
+	s__ := &s_
+	s___ := &s__
+
+	vars = VarMap{}.
+		Set("s", s).
+		Set("s_", s_).
+		Set("s__", s__).
+		Set("s___", s___)
+
+	run(t, "/ptr/string", `{{ s }}`, vars, nil, "foo")
+	run(t, "/ptr/string/1", `{{ s_ }}`, vars, nil, "foo")
+	run(t, "/ptr/string/2", `{{ s__ }}`, vars, nil, "foo")
+	// run(t, "/ptr/string/3", `{{ s___ }}`, vars, nil, "foo")
+
+	i := 10
+	i_ := &i
+	i__ := &i_
+	i___ := &i__
+	vars = VarMap{}.
+		Set("i", i).
+		Set("i_", i_).
+		Set("i__", i__).
+		Set("i___", i___)
+
+	run(t, "/ptr/int", `{{ i }}`, vars, nil, "10")
+	run(t, "/ptr/int/1", `{{ i_ }}`, vars, nil, "10")
+	run(t, "/ptr/int/2", `{{ i__ }}`, vars, nil, "10")
+	// run(t, "/ptr/int/3", `{{ i___ }}`, vars, nil, "10")
+
+	st := stringer{}
+	run(t, "/ptr/stringer", `{{ st }}`, VarMap{}.Set("st", st), nil, "{}")
+
+	st_ := &st
+	run(t, "/ptr/stringer/1", `{{ st_ }}`, VarMap{}.Set("st_", st_), nil, "implements fmt.Stringer")
+
+	st__ := &st_
+	run(t, "/ptr/stringer/2", `{{ st__ }}`, VarMap{}.Set("st__", st__), nil, "implements fmt.Stringer")
+
+	st___ := &st__
+	run(t, "/ptr/stringer/3", `{{ st___ }}`, VarMap{}.Set("st___", st___), nil, "implements fmt.Stringer")
+
+	u := User{
+		Name:  "Pablo",
+		Email: "pablo@escobar.mx",
+	}
+	u_ := &u
+	u__ := &u_
+	u___ := &u__
+	vars = VarMap{}.
+		Set("u", u).
+		Set("u_", u_).
+		Set("u__", u__).
+		Set("u___", u___)
+
+	run(t, "/ptr/struct", `{{ u }}`, vars, nil, "{Pablo pablo@escobar.mx}")
+	run(t, "/ptr/struct/1", `{{ u_ }}`, vars, nil, "{Pablo pablo@escobar.mx}")
+	run(t, "/ptr/struct/2", `{{ u__ }}`, vars, nil, "{Pablo pablo@escobar.mx}")
+	run(t, "/ptr/struct/3", `{{ u___ }}`, vars, nil, "&{Pablo pablo@escobar.mx}")
+}
+
+func TestEvalStructPointerFields(t *testing.T) {
+	type ptrStruct struct {
+		String *string
+		Int    *int
+		Struct *ptrStruct
+	}
+
+	someString := "test"
+	someInt := 10
+	innerString := "nested"
+
+	vars := VarMap{}.Set("s", ptrStruct{
+		String: &someString,
+		Int:    &someInt,
+		Struct: &ptrStruct{
+			String: &innerString,
+		},
+	})
+
+	run(t, "/ptr/struct/string", `{{ s.String }}`, vars, nil, "test")
+	run(t, "/ptr/struct/int", `{{ s.Int }}`, vars, nil, "10")
+	run(t, "/ptr/struct/struct/string", `{{ s.Struct.String }}`, vars, nil, "nested")
+	run(t, "/ptr/struct/struct/int/nil", `{{ s.Struct.Int }}`, vars, nil, "<nil>")
+
+	vars = VarMap{}.Set("s", ptrStruct{
+		// all fields are nil
+	})
+
+	run(t, "/ptr/struct/int/nil", `{{ s.Int }}`, vars, nil, "<nil>")
+	run(t, "/ptr/struct/string/nil", `{{ s.String }}`, vars, nil, "<nil>")
+	run(t, "/ptr/struct/struct/nil", `{{ s.Struct }}`, vars, nil, "<nil>")
 }
 
 func TestEvalAutoescape(t *testing.T) {
 	set := NewHTMLSet("")
-	RunJetTestWithSet(t, set, nil, nil, "Autoescapee_Test1", `<h1>{{"<h1>Hello Buddy!</h1>" }}</h1>`, "<h1>&lt;h1&gt;Hello Buddy!&lt;/h1&gt;</h1>")
-	RunJetTestWithSet(t, set, nil, nil, "Autoescapee_Test2", `<h1>{{"<h1>Hello Buddy!</h1>" |unsafe }}</h1>`, "<h1><h1>Hello Buddy!</h1></h1>")
+	mustCache(t, set, "/autoescape/1", `<h1>{{"<h1>Hello Buddy!</h1>" }}</h1>`)
+	runWithSet(t, "/autoescape/1", set, nil, nil, "<h1>&lt;h1&gt;Hello Buddy!&lt;/h1&gt;</h1>")
+	mustCache(t, set, "/autoescape/2", `<h1>{{"<h1>Hello Buddy!</h1>" |unsafe }}</h1>`)
+	runWithSet(t, "/autoescape/2", set, nil, nil, "<h1><h1>Hello Buddy!</h1></h1>")
 }
 
 func TestFileResolve(t *testing.T) {
 	set := NewHTMLSet("./testData/resolve")
-	RunJetTestWithSet(t, set, nil, nil, "simple", "", "simple")
-	RunJetTestWithSet(t, set, nil, nil, "simple.jet", "", "simple.jet")
-	RunJetTestWithSet(t, set, nil, nil, "extension", "", "extension.jet.html")
-	RunJetTestWithSet(t, set, nil, nil, "extension.jet.html", "", "extension.jet.html")
-	RunJetTestWithSet(t, set, nil, nil, "./sub/subextend", "", "simple - simple.jet - extension.jet.html")
-	RunJetTestWithSet(t, set, nil, nil, "./sub/extend", "", "simple - simple.jet - extension.jet.html")
+	runWithSet(t, "/simple", set, nil, nil, "simple")
+	runWithSet(t, "/simple.jet", set, nil, nil, "simple.jet")
+	runWithSet(t, "/extension", set, nil, nil, "extension.jet.html")
+	runWithSet(t, "/extension.jet.html", set, nil, nil, "extension.jet.html")
+	runWithSet(t, "./sub/subextend", set, nil, nil, "simple - simple.jet - extension.jet.html")
+	runWithSet(t, "./sub/extend", set, nil, nil, "simple - simple.jet - extension.jet.html")
 	//for key, _ := range set.templates {
 	//	t.Log(key)
 	//}
@@ -565,13 +486,13 @@ func TestFileResolve(t *testing.T) {
 
 func TestIncludeIfNotExists(t *testing.T) {
 	set := NewHTMLSet("./testData/includeIfNotExists")
-	RunJetTestWithSet(t, set, nil, nil, "existent", "", "Hi, i exist!!")
-	RunJetTestWithSet(t, set, nil, nil, "notExistent", "", "")
-	RunJetTestWithSet(t, set, nil, nil, "ifIncludeIfExits", "", "Hi, i exist!!\n    Was included!!\n\n\n    Was not included!!\n\n")
-	RunJetTestWithSet(t, set, nil, "World", "wcontext", "", "Hi, Buddy!\nHi, World!")
+	runWithSet(t, "/existent", set, nil, nil, "Hi, i exist!!")
+	runWithSet(t, "/notExistent", set, nil, nil, "")
+	runWithSet(t, "/ifIncludeIfExits", set, nil, nil, "Hi, i exist!!\n    Was included!!\n\n\n    Was not included!!\n\n")
+	runWithSet(t, "/wcontext", set, nil, "World", "Hi, Buddy!\nHi, World!")
 
 	// Check if includeIfExists helper bubbles up runtime errors of included templates
-	tt, err := set.GetTemplate("includeBroken")
+	tt, err := set.GetTemplate("/includeBroken")
 	if err != nil {
 		t.Error(err)
 	}
@@ -582,33 +503,49 @@ func TestIncludeIfNotExists(t *testing.T) {
 	}
 }
 
-func TestSet_Parse(t *testing.T) {
-	set := NewHTMLSet("./testData/resolve")
+// benchmarks
 
-	var c int64 = 100
+func dummy(a string) string {
+	return a
+}
 
-	group := &sync.WaitGroup{}
-	for i, l := int64(0), c; i < l; i++ {
-		(func() {
-			template, _ := set.Parse("TestTemplate", `{{extends "sub/extend"}}`)
-			RunJetTestWithTemplate(t, template, nil, nil, "simple - simple.jet - extension.jet.html")
-			if len(set.templates) > 0 {
-				t.Fail()
-			}
-			group.Add(1)
-			runtime.SetFinalizer(template, func(ob interface{}) {
-				group.Done()
-			})
-		})()
+func prepareStd(tb testing.TB, path, content string) *template.Template {
+	std, err := template.New(path).Parse(content)
+	if err != nil {
+		tb.Fatal(err)
 	}
-	runtime.GC()
-	group.Wait()
+
+	return std
 }
 
 func BenchmarkSimpleAction(b *testing.B) {
-	t, _ := JetTestingSet.GetTemplate("actionNode_dummy")
+	set := prepareJet(b, "/action/dummy", `hello {{dummy("WORLD")}}`)
+	set.AddGlobal("dummy", dummy)
+
+	b.ResetTimer()
+
+	t, _ := set.GetTemplate("/action/dummy")
 	for i := 0; i < b.N; i++ {
-		err := t.Execute(ww, nil, nil)
+		err := t.Execute(ioutil.Discard, nil, nil)
+		if err != nil {
+			b.Error(err.Error())
+		}
+	}
+}
+
+func BenchmarkSimpleActionStd(b *testing.B) {
+	std := template.New("/action/dummy")
+	std.Funcs(template.FuncMap{"dummy": dummy})
+	_, err := std.Parse(`hello {{dummy "WORLD"}}`)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.ResetTimer()
+
+	t := std.Lookup("/action/dummy")
+	for i := 0; i < b.N; i++ {
+		err := t.Execute(ioutil.Discard, nil)
 		if err != nil {
 			b.Error(err.Error())
 		}
@@ -616,66 +553,66 @@ func BenchmarkSimpleAction(b *testing.B) {
 }
 
 func BenchmarkSimpleActionNoAlloc(b *testing.B) {
-	t, _ := JetTestingSet.GetTemplate("noAllocFn")
+	set := prepareJet(b, "/no_allocs", `hello {{ "José" }} {{1}} {{ "José" }}`)
+	b.ResetTimer()
+	t, _ := set.GetTemplate("/no_allocs")
 	for i := 0; i < b.N; i++ {
-		t.Execute(ww, nil, nil)
+		t.Execute(ioutil.Discard, nil, nil)
+	}
+}
+
+func BenchmarkSimpleActionNoAllocStd(b *testing.B) {
+	std := prepareStd(b, "/no_allocs", `hello {{ "José" }} {{1}} {{ "José" }}`)
+	b.ResetTimer()
+	t := std.Lookup("/no_allocs")
+	for i := 0; i < b.N; i++ {
+		err := t.Execute(ioutil.Discard, nil)
+		if err != nil {
+			b.Error(err.Error())
+		}
 	}
 }
 
 func BenchmarkRangeSimple(b *testing.B) {
-	t, _ := JetTestingSet.GetTemplate("rangeOverUsers")
+	set := prepareJet(b, "/range/context/simple", `{{range .}}{{.Name}} - {{.Email}}{{end}}`)
+	b.ResetTimer()
+	t, _ := set.GetTemplate("/range/context/simple")
 	for i := 0; i < b.N; i++ {
-		err := t.Execute(ww, nil, &users)
+		err := t.Execute(ioutil.Discard, nil, &users)
 		if err != nil {
 			panic(err)
-		}
-	}
-}
-
-func BenchmarkRangeSimpleSet(b *testing.B) {
-	t, _ := JetTestingSet.GetTemplate("rangeOverUsers_Set")
-	for i := 0; i < b.N; i++ {
-		err := t.Execute(ww, nil, &users)
-		if err != nil {
-			panic(err)
-		}
-	}
-}
-
-func BenchmarkSimpleActionStd(b *testing.B) {
-	t := stdSet.Lookup("actionNode_dummy")
-	for i := 0; i < b.N; i++ {
-		err := t.Execute(ww, nil)
-		if err != nil {
-			b.Error(err.Error())
-		}
-	}
-}
-
-func BenchmarkSimpleActionStdNoAlloc(b *testing.B) {
-	t := stdSet.Lookup("noAllocFn")
-	for i := 0; i < b.N; i++ {
-		err := t.Execute(ww, nil)
-		if err != nil {
-			b.Error(err.Error())
 		}
 	}
 }
 
 func BenchmarkRangeSimpleStd(b *testing.B) {
-	t := stdSet.Lookup("rangeOverUsers")
+	std := prepareStd(b, "/range/context/simple", `{{range .}}{{.Name}} - {{.Email}}{{end}}`)
+	t := std.Lookup("/range/context/simple")
 	for i := 0; i < b.N; i++ {
-		err := t.Execute(ww, &users)
+		err := t.Execute(ioutil.Discard, &users)
 		if err != nil {
 			b.Error(err.Error())
 		}
 	}
 }
 
-func BenchmarkRangeSimpleSetStd(b *testing.B) {
-	t := stdSet.Lookup("rangeOverUsers_Set")
+func BenchmarkRangeIndexed(b *testing.B) {
+	set := prepareJet(b, "/range/context/indexed", `{{range i, u := .}}{{i}}: {{u.Name}} - {{u.Email}}{{end}}`)
+	b.ResetTimer()
+	t, _ := set.GetTemplate("/range/context/indexed")
 	for i := 0; i < b.N; i++ {
-		err := t.Execute(ww, &users)
+		err := t.Execute(ioutil.Discard, nil, &users)
+		if err != nil {
+			panic(err)
+		}
+	}
+}
+
+func BenchmarkRangeIndexedStd(b *testing.B) {
+	std := prepareStd(b, "/range/context/indexed", `{{range $i, $v := .}}{{$i}}: {{$v.Name}} - {{$v.Email}}{{end}}`)
+	t := std.Lookup("/range/context/indexed")
+	for i := 0; i < b.N; i++ {
+		err := t.Execute(ioutil.Discard, &users)
 		if err != nil {
 			b.Error(err.Error())
 		}
@@ -683,38 +620,62 @@ func BenchmarkRangeSimpleSetStd(b *testing.B) {
 }
 
 func BenchmarkNewBlockYield(b *testing.B) {
-	t, _ := JetTestingSet.GetTemplate("BenchNewBlock")
-	b.SetParallelism(10000)
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			err := t.Execute(ww, nil, nil)
-			if err != nil {
-				b.Error(err.Error())
-			}
+	set := prepareJet(b, "/block_yield", `
+{{ block col(md=12, offset=0) }}
+	<div class="col-md-{{md}} col-md-offset-{{offset}}">{{ yield content }}</div>
+{{ end }}
+{{ block row(md=12) }}
+	<div class="row {{md}}">{{ yield content }}</div>
+	{{ content }}
+	<div class="col-md-1"></div>
+	<div class="col-md-1"></div>
+	<div class="col-md-1"></div>
+{{ end }}
+{{ block header() }}
+	<div class="header">
+	{{ yield row() content }}
+		{{ yield col(md=6) content }}
+			{{ yield content }}
+		{{ end }}
+	{{ end }}
+	</div>
+	<h1>Hey {{ content }}!</h1>
+{{ end }}
+{{ yield header() "You" }}`)
+	b.ResetTimer()
+	t, _ := set.GetTemplate("/block_yield")
+	for i := 0; i < b.N; i++ {
+		err := t.Execute(ioutil.Discard, nil, &users)
+		if err != nil {
+			panic(err)
 		}
-	})
-
+	}
 }
 
-func BenchmarkDynamicFunc(b *testing.B) {
+func BenchmarkFuncDyn(b *testing.B) {
+	set := prepareJet(b, "/func/dyn", `hello {{dummy("WORLD")}}`)
+	vars := VarMap{}.Set("dummy", dummy)
+	b.ResetTimer()
 
-	var variables = VarMap{}.Set("dummy", dummy)
-	t, _ := JetTestingSet.GetTemplate("actionNode_dummy")
+	t, _ := set.GetTemplate("/func/dyn")
 	for i := 0; i < b.N; i++ {
-		err := t.Execute(ww, variables, nil)
+		err := t.Execute(ioutil.Discard, vars, nil)
 		if err != nil {
 			b.Error(err.Error())
 		}
 	}
 }
 
-func BenchmarkJetFunc(b *testing.B) {
-	var variables = VarMap{}.SetFunc("dummy", func(a Arguments) reflect.Value {
+func BenchmarkFuncFast(b *testing.B) {
+	set := prepareJet(b, "/func/fast", `hello {{dummy("WORLD")}}`)
+	vars := VarMap{}.SetFunc("dummy", func(a Arguments) reflect.Value {
 		return reflect.ValueOf(dummy(a.Get(0).String()))
 	})
-	t, _ := JetTestingSet.GetTemplate("actionNode_dummy")
+	b.ResetTimer()
+
+	t, _ := set.GetTemplate("/func/fast")
 	for i := 0; i < b.N; i++ {
-		err := t.Execute(ww, variables, nil)
+		err := t.Execute(ioutil.Discard, vars, nil)
 		if err != nil {
 			b.Error(err.Error())
 		}

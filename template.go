@@ -19,6 +19,7 @@
 package jet
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -46,12 +47,12 @@ type Set struct {
 	tmx               *sync.RWMutex        // template parsing mutex
 	gmx               *sync.RWMutex        // global variables map mutex
 	defaultExtensions []string
-	developmentMode   bool
+	developmentMode   bool // when true, templates will never be fetched from or added to templates cache
 	leftDelim         string
 	rightDelim        string
 }
 
-// SetDevelopmentMode set's development mode on/off, in development mode template will be recompiled on every run
+// SetDevelopmentMode set's development mode on/off, in development mode template will be read from the loader and parsed on every run.
 func (s *Set) SetDevelopmentMode(b bool) *Set {
 	s.developmentMode = b
 	return s
@@ -127,10 +128,17 @@ func (s *Set) getTemplateFromLoader(path string) (t *Template, err error) {
 	for _, extension := range s.defaultExtensions {
 		canonicalPath := path + extension
 		if found := s.loader.Exists(canonicalPath); found {
-			return s.loadFromFile(canonicalPath)
+			return s.load(canonicalPath)
 		}
 	}
 	return nil, fmt.Errorf("template %s could not be found", path)
+}
+
+func ensureAbs(path string) string {
+	if !filepath.IsAbs(path) {
+		return string(filepath.Separator) + path
+	}
+	return path
 }
 
 // GetTemplate tries to find (and load, if not yet loaded) the template at the specified path.
@@ -143,6 +151,8 @@ func (s *Set) getTemplateFromLoader(path string) (t *Template, err error) {
 // in the set's templates cache, and if it can't find the template it will try to load the same paths via
 // the loader, and, if parsed successfully, cache the template.
 func (s *Set) GetTemplate(path string) (t *Template, err error) {
+	path = ensureAbs(path)
+
 	if !s.developmentMode {
 		s.tmx.RLock()
 		t, found := s.getTemplateFromCache(path)
@@ -154,8 +164,8 @@ func (s *Set) GetTemplate(path string) (t *Template, err error) {
 	}
 
 	t, err = s.getTemplateFromLoader(path)
-	if err == nil && !s.developmentMode {
-		// load template into cache
+	if err == nil {
+		// put template into cache
 		s.tmx.Lock()
 		s.templates[t.Name] = t
 		s.tmx.Unlock()
@@ -166,6 +176,8 @@ func (s *Set) GetTemplate(path string) (t *Template, err error) {
 // same as GetTemplate, but assumes the reader already called s.tmx.RLock(), and
 // doesn't cache a template when found through the loader
 func (s *Set) getTemplate(path string) (t *Template, err error) {
+	path = ensureAbs(path)
+
 	if !s.developmentMode {
 		t, found := s.getTemplateFromCache(path)
 		if found {
@@ -193,7 +205,7 @@ func (s *Set) Parse(path, content string) (*Template, error) {
 	return t, err
 }
 
-func (s *Set) loadFromFile(path string) (template *Template, err error) {
+func (s *Set) load(path string) (*Template, error) {
 	f, err := s.loader.Open(path)
 	if err != nil {
 		return nil, err
@@ -206,30 +218,31 @@ func (s *Set) loadFromFile(path string) (template *Template, err error) {
 	return s.parse(path, string(content))
 }
 
-func (s *Set) LoadTemplate(path, content string) (*Template, error) {
-	if s.developmentMode {
-		s.tmx.RLock()
-		defer s.tmx.RUnlock()
-		return s.parse(path, content)
+func (s *Set) Cache(path, content string) (*Template, error) {
+	if path != ensureAbs(path) {
+		return nil, errors.New("path must be absolute")
 	}
 
-	// fast path (t from cache)
 	s.tmx.RLock()
-	if t, found := s.templates[path]; found {
-		s.tmx.RUnlock()
-		return t, nil
-	}
-	s.tmx.RUnlock()
-
-	// not found, parse and cache
-	s.tmx.Lock()
-	defer s.tmx.Unlock()
-
 	t, err := s.parse(path, content)
-	if err == nil {
-		s.templates[path] = t
+	s.tmx.RUnlock()
+	if err != nil {
+		return nil, err
 	}
-	return t, err
+
+	s.tmx.Lock()
+	s.templates[t.Name] = t
+	s.tmx.Unlock()
+
+	return t, nil
+}
+
+func (s *Set) Uncache(path string) {
+	path = ensureAbs(path)
+
+	s.tmx.Lock()
+	delete(s.templates, path)
+	s.tmx.Unlock()
 }
 
 func (t *Template) String() (template string) {

@@ -130,11 +130,11 @@ func (st *scope) getBlock(name string) (block *BlockNode, has bool) {
 }
 
 // YieldTemplate yields a template same as include
-func (st *Runtime) YieldTemplate(path string, context interface{}) {
+func (st *Runtime) YieldTemplate(path, siblingTemplate string, context interface{}) {
 
-	t, err := st.set.GetTemplate(path)
+	t, err := st.set.getSiblingTemplate(path, siblingTemplate)
 	if err != nil {
-		panic(fmt.Errorf("include: template %q was not found: %s", path, err))
+		panic(fmt.Errorf("yield: template %q was not found: %s", path, err))
 	}
 
 	st.newScope()
@@ -255,7 +255,7 @@ func (st *Runtime) executeSet(left Expression, right reflect.Value) {
 	}
 	lef := len(fields) - 1
 	for i := 0; i < lef; i++ {
-		value = getFieldOrMethodValue(fields[i], value)
+		value = getFieldOrMethodValue(value, fields[i])
 		if !value.IsValid() {
 			left.errorf("identifier %q is not available in the current scope", fields[i])
 		}
@@ -621,7 +621,7 @@ func (st *Runtime) evalPrimaryExpressionGroup(node Expression) reflect.Value {
 			if canNumber(indexType.Kind()) {
 				return baseExpression.Field(int(castInt64(indexExpression)))
 			} else if indexType.Kind() == reflect.String {
-				return getFieldOrMethodValue(indexExpression.String(), baseExpression)
+				return getFieldOrMethodValue(baseExpression, indexExpression.String())
 			} else {
 				node.errorf("non numeric value in index expression kind %s", baseExpression.Kind().String())
 			}
@@ -718,7 +718,7 @@ func (st *Runtime) isSet(node Node) bool {
 				i := int(castInt64(indexExpression))
 				return i >= 0 && i < baseExpression.NumField()
 			} else if indexType.Kind() == reflect.String {
-				fieldValue := getFieldOrMethodValue(indexExpression.String(), baseExpression)
+				fieldValue := getFieldOrMethodValue(baseExpression, indexExpression.String())
 				return notNil(fieldValue)
 
 			} else {
@@ -734,7 +734,7 @@ func (st *Runtime) isSet(node Node) bool {
 		node := node.(*FieldNode)
 		resolved := st.context
 		for i := 0; i < len(node.Ident); i++ {
-			resolved = getFieldOrMethodValue(node.Ident[i], resolved)
+			resolved = getFieldOrMethodValue(resolved, node.Ident[i])
 			if !notNil(resolved) {
 				return false
 			}
@@ -1096,7 +1096,7 @@ func (st *Runtime) evalBaseExpressionGroup(node Node) reflect.Value {
 	case NodeIdentifier:
 		resolved := st.Resolve(node.(*IdentifierNode).Ident)
 		if !resolved.IsValid() {
-			node.errorf("identifier %q is not available in the current scope %v", node, st.variables)
+			node.errorf("identifier '%q' is not available in the current scope (%+v)", node, st.variables)
 		}
 
 		return resolved
@@ -1104,7 +1104,7 @@ func (st *Runtime) evalBaseExpressionGroup(node Node) reflect.Value {
 		node := node.(*FieldNode)
 		resolved := st.context
 		for i := 0; i < len(node.Ident); i++ {
-			fieldResolved := getFieldOrMethodValue(node.Ident[i], resolved)
+			fieldResolved := getFieldOrMethodValue(resolved, node.Ident[i])
 			if !fieldResolved.IsValid() {
 				node.errorf("there is no field or method %q in %s", node.Ident[i], getTypeString(resolved))
 			}
@@ -1175,7 +1175,7 @@ func (st *Runtime) evalCommandExpression(node *CommandNode) (reflect.Value, bool
 func (st *Runtime) evalFieldAccessExpression(node *ChainNode) (reflect.Value, error) {
 	resolved := st.evalPrimaryExpressionGroup(node.Node)
 	for i := 0; i < len(node.Field); i++ {
-		resolved = getFieldOrMethodValue(node.Field[i], resolved)
+		resolved = getFieldOrMethodValue(resolved, node.Field[i])
 		if !resolved.IsValid() {
 			return resolved, fmt.Errorf("there is no field or method %q in %s", node.Field[i], getTypeString(resolved))
 		}
@@ -1459,53 +1459,25 @@ func castInt64(v reflect.Value) int64 {
 var cachedStructsMutex = sync.RWMutex{}
 var cachedStructsFieldIndex = map[reflect.Type]map[string][]int{}
 
-func getFieldOrMethodValue(key string, v reflect.Value) reflect.Value {
-	if !v.IsValid() {
-		return reflect.Value{}
-	}
-
-	value := getValue(key, v)
-	if value.Kind() == reflect.Interface && !value.IsNil() {
-		value = value.Elem()
-	}
-
-	for dereferenceLimit := 2; value.Kind() == reflect.Ptr && dereferenceLimit >= 0; dereferenceLimit-- {
-		if value.IsNil() {
-			return reflect.ValueOf("")
-		}
-		value = reflect.Indirect(value)
-	}
-
-	return value
-}
-
-func getValue(key string, v reflect.Value) reflect.Value {
+func getFieldOrMethodValue(v reflect.Value, key string) reflect.Value {
 	if !v.IsValid() {
 		return reflect.Value{}
 	}
 
 	value := v.MethodByName(key)
-
 	if value.IsValid() {
 		return value
 	}
 
-	k := v.Kind()
-	if k == reflect.Ptr || k == reflect.Interface {
-		v = v.Elem()
-		k = v.Kind()
-		value = v.MethodByName(key)
-		if value.IsValid() {
-			return value
+	switch v.Kind() {
+	case reflect.Ptr, reflect.Interface:
+		if v.IsNil() {
+			return reflect.Value{}
 		}
-	} else if v.CanAddr() {
-		value = v.Addr().MethodByName(key)
-		if value.IsValid() {
-			return value
-		}
-	}
 
-	if k == reflect.Struct {
+		resolved := v.Elem()
+		return getFieldOrMethodValue(resolved, key)
+	case reflect.Struct:
 		typ := v.Type()
 		cachedStructsMutex.RLock()
 		cache, ok := cachedStructsFieldIndex[typ]
@@ -1523,10 +1495,11 @@ func getValue(key string, v reflect.Value) reflect.Value {
 			return v.FieldByIndex(id)
 		}
 		return reflect.Value{}
-	} else if k == reflect.Map {
+	case reflect.Map:
 		return v.MapIndex(reflect.ValueOf(key))
+	default:
+		return reflect.Value{}
 	}
-	return reflect.Value{}
 }
 
 func buildCache(typ reflect.Type, cache map[string][]int, parent []int) {

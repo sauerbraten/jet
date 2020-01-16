@@ -45,12 +45,14 @@ func NewOSFileSystemLoader(dirPath string) *OSFileSystemLoader {
 
 // Open opens a file from OS file system.
 func (l *OSFileSystemLoader) Open(path string) (io.ReadCloser, error) {
-	return os.Open(filepath.Join(l.dir, path))
+	path = filepath.Join(l.dir, path)
+	return os.Open(path)
 }
 
 // Exists checks if the template name exists by walking the list of template paths
 // returns true if the template file was found
 func (l *OSFileSystemLoader) Exists(path string) bool {
-	stat, err := os.Stat(filepath.Join(l.dir, path))
+	path = filepath.Join(l.dir, path)
+	stat, err := os.Stat(path)
 	return err == nil && !stat.IsDir()
 }

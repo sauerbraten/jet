@@ -29,10 +29,10 @@
     {{end}}
 {{ end }}
 
-{{ include "include.jet" }}
+{{ include "/include.jet" }}
 
 ===
-{{extends "base.jet"}}
+{{extends "/base.jet"}}
 {{block textfield(label,name,value)}}
     {{label}}: <input type="text" name="{{name}}" value="{{value}}" />
 {{end}}
@@ -57,4 +57,4 @@
     {{end}}
 {{end}}
 
-{{include "include.jet"}}
+{{include "/include.jet"}}

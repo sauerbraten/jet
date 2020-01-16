@@ -66,37 +66,37 @@ func (t ParserTestCase) ExpectPrintSame(input string) {
 
 func TestParseTemplateAndImport(t *testing.T) {
 	p := ParserTestCase{T: t}
-	p.TestPrintFile("extends.jet")
-	p.TestPrintFile("imports.jet")
+	p.TestPrintFile("/extends.jet")
+	p.TestPrintFile("/imports.jet")
 }
 
 func TestParseTemplateControl(t *testing.T) {
 	p := ParserTestCase{T: t}
-	p.TestPrintFile("if.jet")
-	p.TestPrintFile("range.jet")
+	p.TestPrintFile("/if.jet")
+	p.TestPrintFile("/range.jet")
 }
 
 func TestParseTemplateExpressions(t *testing.T) {
 	p := ParserTestCase{T: t}
-	p.TestPrintFile("simple_expression.jet")
-	p.TestPrintFile("additive_expression.jet")
-	p.TestPrintFile("multiplicative_expression.jet")
+	p.TestPrintFile("/simple_expression.jet")
+	p.TestPrintFile("/additive_expression.jet")
+	p.TestPrintFile("/multiplicative_expression.jet")
 }
 
 func TestParseTemplateBlockYield(t *testing.T) {
 	p := ParserTestCase{T: t}
-	p.TestPrintFile("block_yield.jet")
-	p.TestPrintFile("new_block_yield.jet")
+	p.TestPrintFile("/block_yield.jet")
+	p.TestPrintFile("/new_block_yield.jet")
 }
 
 func TestParseTemplateIndexSliceExpression(t *testing.T) {
 	p := ParserTestCase{T: t}
-	p.TestPrintFile("index_slice_expression.jet")
+	p.TestPrintFile("/index_slice_expression.jet")
 }
 
 func TestParseTemplateAssignment(t *testing.T) {
 	p := ParserTestCase{T: t}
-	p.TestPrintFile("assignment.jet")
+	p.TestPrintFile("/assignment.jet")
 }
 
 func TestParseTemplateWithCustomDelimiters(t *testing.T) {
