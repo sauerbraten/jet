@@ -517,6 +517,12 @@ func prepareStd(tb testing.TB, path, content string) *template.Template {
 	return std
 }
 
+func TestExecReturn(t *testing.T) {
+	set := NewHTMLSet("./testData/execReturn")
+	runWithSet(t, "foo", set, nil, nil, "\n\n... some content that will be discarded when this template runs inside exec() ...\n")
+	runWithSet(t, "test", set, nil, nil, "foo")
+}
+
 func BenchmarkSimpleAction(b *testing.B) {
 	set := prepareJet(b, "/action/dummy", `hello {{dummy("WORLD")}}`)
 	set.AddGlobal("dummy", dummy)
