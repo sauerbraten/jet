@@ -135,7 +135,7 @@ func (t *Template) newInclude(pos Pos, line int, name, pipe Expression) *Include
 }
 
 func (t *Template) newReturn(pos Pos, line int, pipe Expression) *ReturnNode {
-	return &ReturnNode{NodeBase: NodeBase{TemplateName: t.Name, NodeType: NodeReturn, Pos: pos, Line: line}, Value: pipe}
+	return &ReturnNode{NodeBase: NodeBase{TemplatePath: t.Name, NodeType: NodeReturn, Pos: pos, Line: line}, Value: pipe}
 }
 
 func (t *Template) newNumber(pos Pos, text string, typ itemType) (*NumberNode, error) {

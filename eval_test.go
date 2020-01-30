@@ -314,7 +314,6 @@ func TestEvalIndexExpr(t *testing.T) {
 
 	user := User{"José Santos", "email@example.com"}
 
-	run(t, "/index/struct_context/brackets/num_field_index", `{{.[0]}}`, nil, user, "José Santos")
 	run(t, "/index/struct_context/brackets/field_name", `{{.["Email"]}}`, nil, user, "email@example.com")
 	run(t, "/index/struct_context/dots/field_name", `{{.Email}}`, nil, user, "email@example.com")
 
