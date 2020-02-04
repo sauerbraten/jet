@@ -71,7 +71,7 @@ func init() {
 				return reflect.ValueOf(expression.NumField())
 			}
 
-			a.Panicf("inválid value type %s in len builtin", expression.Type())
+			a.Panicf("invalid value type %s in len builtin", expression.Type())
 			return reflect.Value{}
 		})),
 		"includeIfExists": reflect.ValueOf(Func(func(a Arguments) reflect.Value {
@@ -113,26 +113,28 @@ func init() {
 				panic(err)
 			}
 
-			a.runtime.newScope()
-			w := a.runtime.Writer
+			// setup execution writer, scope, context
+			backedUpWriter := a.runtime.Writer
 			a.runtime.Writer = ioutil.Discard
+			a.runtime.newScope()
 			a.runtime.blocks = t.processedBlocks
 			root := t.Root
 			if t.extends != nil {
 				root = t.extends.Root
 			}
-
+			backedUpContext, execContext := a.runtime.context, a.runtime.context
 			if a.NumOfArguments() > 1 {
-				c := a.runtime.context
-				a.runtime.context = a.Get(1)
-				result = a.runtime.executeList(root)
-				a.runtime.context = c
-			} else {
-				result = a.runtime.executeList(root)
+				execContext = a.Get(1)
 			}
+			a.runtime.context = execContext
 
+			// execute template
+			result = a.runtime.executeList(root)
+
+			// restore context, scope, writer
+			a.runtime.context = backedUpContext
 			a.runtime.releaseScope()
-			a.runtime.Writer = w
+			a.runtime.Writer = backedUpWriter
 
 			return result
 		})),
