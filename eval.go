@@ -284,9 +284,9 @@ func (st *Runtime) executeSetList(set *SetNode) {
 		value := st.evalPrimaryExpressionGroup(set.Right[0])
 		st.executeSet(set.Left[0], value)
 		if value.IsValid() {
-			st.executeSet(set.Left[1], valueBoolTRUE)
+			st.executeSet(set.Left[1], reflect.ValueOf(true))
 		} else {
-			st.executeSet(set.Left[1], valueBoolFALSE)
+			st.executeSet(set.Left[1], reflect.ValueOf(false))
 		}
 	} else {
 		for i := 0; i < len(set.Left); i++ {
@@ -302,9 +302,9 @@ func (st *Runtime) executeLetList(set *SetNode) {
 		st.variables[set.Left[0].(*IdentifierNode).Ident] = value
 
 		if value.IsValid() {
-			st.variables[set.Left[1].(*IdentifierNode).Ident] = valueBoolTRUE
+			st.variables[set.Left[1].(*IdentifierNode).Ident] = reflect.ValueOf(true)
 		} else {
-			st.variables[set.Left[1].(*IdentifierNode).Ident] = valueBoolFALSE
+			st.variables[set.Left[1].(*IdentifierNode).Ident] = reflect.ValueOf(false)
 		}
 
 	} else {
@@ -327,7 +327,7 @@ func (st *Runtime) executeYieldBlock(block *BlockNode, blockParam, yieldParam *B
 			p := &blockParam.List[i]
 			if _, found := st.variables[p.Identifier]; !found {
 				if p.Expression == nil {
-					st.variables[p.Identifier] = valueBoolFALSE
+					st.variables[p.Identifier] = reflect.ValueOf(false)
 				} else {
 					st.variables[p.Identifier] = st.evalPrimaryExpressionGroup(p.Expression)
 				}
@@ -382,6 +382,8 @@ func (st *Runtime) executeList(list *ListNode) reflect.Value {
 		}
 	}()
 
+	returnValue := reflect.Value{}
+
 	for i := 0; i < len(list.Nodes); i++ {
 		node := list.Nodes[i]
 		switch node.Type() {
@@ -432,9 +434,9 @@ func (st *Runtime) executeList(list *ListNode) reflect.Value {
 			}
 
 			if isTrue(st.evalPrimaryExpressionGroup(node.Expression)) {
-				st.executeList(node.List)
+				returnValue = st.executeList(node.List)
 			} else if node.ElseList != nil {
-				st.executeList(node.ElseList)
+				returnValue = st.executeList(node.ElseList)
 			}
 			if isLet {
 				st.releaseScope()
@@ -463,7 +465,7 @@ func (st *Runtime) executeList(list *ListNode) reflect.Value {
 			ranger := getRanger(expression)
 			indexValue, rangeValue, end := ranger.Range()
 			if !end {
-				for !end {
+				for !end && !returnValue.IsValid() {
 					if isSet {
 						if isLet {
 							if isKeyVal {
@@ -483,11 +485,11 @@ func (st *Runtime) executeList(list *ListNode) reflect.Value {
 					} else {
 						st.context = rangeValue
 					}
-					st.executeList(node.List)
+					returnValue = st.executeList(node.List)
 					indexValue, rangeValue, end = ranger.Range()
 				}
 			} else if node.ElseList != nil {
-				st.executeList(node.ElseList)
+				returnValue = st.executeList(node.ElseList)
 			}
 			st.context = context
 			if isLet {
@@ -542,7 +544,7 @@ func (st *Runtime) executeList(list *ListNode) reflect.Value {
 					t = t.extends
 					Root = t.Root
 				}
-				st.executeList(Root)
+				returnValue = st.executeList(Root)
 				st.releaseScope()
 				if node.Expression != nil {
 					st.context = context
@@ -550,17 +552,12 @@ func (st *Runtime) executeList(list *ListNode) reflect.Value {
 			}
 		case NodeReturn:
 			node := node.(*ReturnNode)
-			return st.evalPrimaryExpressionGroup(node.Value)
+			returnValue = st.evalPrimaryExpressionGroup(node.Value)
 		}
 	}
 
-	return reflect.Value{}
+	return returnValue
 }
-
-var (
-	valueBoolTRUE  = reflect.ValueOf(true)
-	valueBoolFALSE = reflect.ValueOf(false)
-)
 
 func (st *Runtime) evalPrimaryExpressionGroup(node Expression) reflect.Value {
 	switch node.Type() {
@@ -1014,9 +1011,9 @@ func (st *Runtime) evalBaseExpressionGroup(node Node) reflect.Value {
 		return reflect.ValueOf(nil)
 	case NodeBool:
 		if node.(*BoolNode).True {
-			return valueBoolTRUE
+			return reflect.ValueOf(true)
 		}
-		return valueBoolFALSE
+		return reflect.ValueOf(false)
 	case NodeString:
 		return reflect.ValueOf(&node.(*StringNode).Text).Elem()
 	case NodeIdentifier:

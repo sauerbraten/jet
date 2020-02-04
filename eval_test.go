@@ -519,8 +519,16 @@ func prepareStd(tb testing.TB, path, content string) *template.Template {
 
 func TestExecReturn(t *testing.T) {
 	set := NewHTMLSet("./testData/execReturn")
-	runWithSet(t, "foo", set, nil, nil, "\n\n... some content that will be discarded when this template runs inside exec() ...\n")
-	runWithSet(t, "test", set, nil, nil, "foo")
+	runWithSet(t, "simple", set, nil, nil, "\n\n... some content that will be discarded when this template runs inside exec() ...\n\n")
+	runWithSet(t, "test_simple", set, nil, nil, "foo\n")
+	runWithSet(t, "in_if", set, nil, nil, "\n\n\n")
+	runWithSet(t, "test_in_if", set, nil, nil, "from inside if branch\n")
+	context := map[string]interface{}{"arr": []string{"foo", "bar"}}
+	runWithSet(t, "in_range", set, nil, context, "\n0: foo\n\n\n")
+	runWithSet(t, "test_in_range", set, nil, context, "from inside if branch inside range\n")
+	runWithSet(t, "included", set, nil, nil, "... some content that will be discarded when this template runs inside exec() ...\n\n")
+	runWithSet(t, "in_include", set, nil, nil, "bla bla\n... some content that will be discarded when this template runs inside exec() ...\n\n\nfoo\n")
+	runWithSet(t, "test_in_include", set, nil, nil, "from inside included template\n")
 }
 
 func BenchmarkSimpleAction(b *testing.B) {

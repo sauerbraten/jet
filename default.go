@@ -26,8 +26,6 @@ import (
 	"text/template"
 )
 
-
-
 var defaultVariables map[string]reflect.Value
 
 func init() {
@@ -53,10 +51,10 @@ func init() {
 			a.RequireNumOfArguments("isset", 1, -1)
 			for i := 0; i < len(a.argExpr); i++ {
 				if !a.runtime.isSet(a.argExpr[i]) {
-					return valueBoolFALSE
+					return reflect.ValueOf(false)
 				}
 			}
-			return valueBoolTRUE
+			return reflect.ValueOf(true)
 		})),
 		"len": reflect.ValueOf(Func(func(a Arguments) reflect.Value {
 			a.RequireNumOfArguments("len", 1, 1)
