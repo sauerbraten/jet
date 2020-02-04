@@ -68,7 +68,7 @@ var users = []*User{
 // setup
 
 func prepareJet(tb testing.TB, path, content string) *Set {
-	set := NewSet(nil, "")
+	set := NewSet(NoopEscape, "")
 
 	_, err := set.Cache(path, content)
 	if err != nil {
@@ -84,14 +84,8 @@ func run(t *testing.T, tmplPath, tmplContent string, vars VarMap, context interf
 }
 
 func runWithSet(t *testing.T, tmplPath string, set *Set, vars VarMap, context interface{}, expected string) {
-	tmpl, err := set.GetTemplate(tmplPath)
-	if err != nil {
-		t.Errorf("error getting template %s: %v", tmplPath, err)
-		return
-	}
-
 	var buf bytes.Buffer
-	err = tmpl.Execute(&buf, vars, context)
+	err := set.Execute(tmplPath, &buf, vars, context)
 	if err != nil {
 		t.Errorf("error executing %s: %v", tmplPath, err)
 		return
@@ -231,7 +225,7 @@ func TestEvalDefaults(t *testing.T) {
 	run(t, "/defaults/len/string/literal", `{{len("111")}}`, nil, nil, "3")
 	run(t, "/defaults/len/slice/context", `{{len(.)}}`, nil, []int{1, 2, 3}, "3")
 
-	run(t, "/defaults/safe_html", `<h1>{{"<h1>Hello Buddy!</h1>" |safeHtml}}</h1>`, nil, nil, `<h1>&lt;h1&gt;Hello Buddy!&lt;/h1&gt;</h1>`)
+	run(t, "/defaults/safe_html", `<h1>{{ "<h1>Hello Buddy!</h1>" | safeHtml }}</h1>`, nil, nil, `<h1>&lt;h1&gt;Hello Buddy!&lt;/h1&gt;</h1>`)
 	run(t, "/defaults/safe_html/2", `<h1>{{safeHtml: "<h1>Hello Buddy!</h1>"}}</h1>`, nil, nil, `<h1>&lt;h1&gt;Hello Buddy!&lt;/h1&gt;</h1>`)
 	run(t, "/defaults/html_escape", `<h1>{{html: "<h1>Hello Buddy!</h1>"}}</h1>`, nil, nil, `<h1>&lt;h1&gt;Hello Buddy!&lt;/h1&gt;</h1>`)
 	run(t, "/defaults/url_escape", `<h1>{{url: "<h1>Hello Buddy!</h1>"}}</h1>`, nil, nil, `<h1>%3Ch1%3EHello+Buddy%21%3C%2Fh1%3E</h1>`)
@@ -487,7 +481,7 @@ func TestIncludeIfNotExists(t *testing.T) {
 	set := NewHTMLSet("./testData/includeIfNotExists")
 	runWithSet(t, "/existent", set, nil, nil, "Hi, i exist!!")
 	runWithSet(t, "/notExistent", set, nil, nil, "")
-	runWithSet(t, "/ifIncludeIfExits", set, nil, nil, "Hi, i exist!!\n    Was included!!\n\n\n    Was not included!!\n\n")
+	runWithSet(t, "/ifIncludeIfExits", set, nil, nil, "Hi, i exist!!\n    Was included!\n\n\n    Was not included!\n\n")
 	runWithSet(t, "/wcontext", set, nil, "World", "Hi, Buddy!\nHi, World!")
 
 	// Check if includeIfExists helper bubbles up runtime errors of included templates

@@ -16,9 +16,9 @@ package jet
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
-	"io"
 	"io/ioutil"
 	"net/url"
 	"reflect"
@@ -41,10 +41,10 @@ func init() {
 		"map":       reflect.ValueOf(newMap),
 		"html":      reflect.ValueOf(html.EscapeString),
 		"url":       reflect.ValueOf(url.QueryEscape),
-		"safeHtml":  reflect.ValueOf(SafeWriter(template.HTMLEscape)),
-		"safeJs":    reflect.ValueOf(SafeWriter(template.JSEscape)),
-		"raw":       reflect.ValueOf(SafeWriter(unsafePrinter)),
-		"unsafe":    reflect.ValueOf(SafeWriter(unsafePrinter)),
+		"safeHtml":  reflect.ValueOf(EscapeFunc(template.HTMLEscape)),
+		"safeJs":    reflect.ValueOf(EscapeFunc(template.JSEscape)),
+		"raw":       reflect.ValueOf(EscapeFunc(unsafePrinter)),
+		"unsafe":    reflect.ValueOf(EscapeFunc(unsafePrinter)),
 		"writeJson": reflect.ValueOf(jsonRenderer),
 		"json":      reflect.ValueOf(json.Marshal),
 		"isset": reflect.ValueOf(Func(func(a Arguments) reflect.Value {
@@ -75,66 +75,37 @@ func init() {
 			return reflect.Value{}
 		})),
 		"includeIfExists": reflect.ValueOf(Func(func(a Arguments) reflect.Value {
-
 			a.RequireNumOfArguments("includeIfExists", 1, 2)
-			t, err := a.runtime.set.GetTemplate(a.Get(0).String())
-			// If template exists but returns an error then panic instead of failing silently
-			if t != nil && err != nil {
-				panic(err)
-			}
-			if err != nil {
-				return hiddenFALSE
-			}
 
-			a.runtime.newScope()
-			a.runtime.blocks = t.processedBlocks
-			Root := t.Root
-			if t.extends != nil {
-				Root = t.extends.Root
-			}
-
-			if a.NumOfArguments() > 1 {
-				c := a.runtime.context
-				a.runtime.context = a.Get(1)
-				a.runtime.executeList(Root)
-				a.runtime.context = c
-			} else {
-				a.runtime.executeList(Root)
-			}
-
-			a.runtime.releaseScope()
-
-			return hiddenTRUE
-		})),
-		"exec": reflect.ValueOf(Func(func(a Arguments) (result reflect.Value) {
-			a.RequireNumOfArguments("exec", 1, 2)
-			t, err := a.runtime.set.GetTemplate(a.Get(0).String())
-			if err != nil {
-				panic(err)
-			}
-
-			// setup execution writer, scope, context
-			backedUpWriter := a.runtime.Writer
-			a.runtime.Writer = ioutil.Discard
-			a.runtime.newScope()
-			a.runtime.blocks = t.processedBlocks
-			root := t.Root
-			if t.extends != nil {
-				root = t.extends.Root
-			}
-			backedUpContext, execContext := a.runtime.context, a.runtime.context
+			execContext := a.runtime.context
 			if a.NumOfArguments() > 1 {
 				execContext = a.Get(1)
 			}
-			a.runtime.context = execContext
 
-			// execute template
-			result = a.runtime.executeList(root)
+			_, err := a.runtime.execute(a.Get(0).String(), a.runtime.writer, execContext)
+			if err != nil {
+				var notFound templateNotFoundErr
+				if errors.As(err, &notFound) {
+					return hiddenFalse
+				}
+				// template exists but returns an error -> panic instead of failing silently
+				panic(err)
+			}
 
-			// restore context, scope, writer
-			a.runtime.context = backedUpContext
-			a.runtime.releaseScope()
-			a.runtime.Writer = backedUpWriter
+			return hiddenTrue
+		})),
+		"exec": reflect.ValueOf(Func(func(a Arguments) (result reflect.Value) {
+			a.RequireNumOfArguments("exec", 1, 2)
+
+			execContext := a.runtime.context
+			if a.NumOfArguments() > 1 {
+				execContext = a.Get(1)
+			}
+
+			result, err := a.runtime.execute(a.Get(0).String(), ioutil.Discard, execContext)
+			if err != nil {
+				panic(err)
+			}
 
 			return result
 		})),
@@ -143,38 +114,28 @@ func init() {
 
 type hiddenBool bool
 
-func (m hiddenBool) Render(r *Runtime) {
+func (m hiddenBool) Render(r *Runtime) { /* */ }
 
-}
-
-var hiddenTRUE = reflect.ValueOf(hiddenBool(true))
-var hiddenFALSE = reflect.ValueOf(hiddenBool(false))
+var hiddenTrue = reflect.ValueOf(hiddenBool(true))
+var hiddenFalse = reflect.ValueOf(hiddenBool(false))
 
 func jsonRenderer(v interface{}) RendererFunc {
 	return func(r *Runtime) {
-		err := json.NewEncoder(r.Writer).Encode(v)
+		err := json.NewEncoder(r.writer).Encode(v)
 		if err != nil {
 			panic(err)
 		}
 	}
 }
 
-func unsafePrinter(w io.Writer, b []byte) {
-	w.Write(b)
-}
-
-// SafeWriter escapee func. Functions implementing this type will write directly into the writer,
-// skipping the escape phase; use this type to create special types of escapee funcs.
-type SafeWriter func(io.Writer, []byte)
-
-func newMap(values ...interface{}) (nmap map[string]interface{}) {
+func newMap(values ...interface{}) map[string]interface{} {
 	if len(values)%2 > 0 {
-		panic("new map: invalid number of arguments on call to map")
+		panic(fmt.Errorf("map(): expected even number of arguments, but got %d", len(values)))
 	}
-	nmap = make(map[string]interface{})
 
+	m := make(map[string]interface{}, len(values)/2)
 	for i := 0; i < len(values); i += 2 {
-		nmap[fmt.Sprint(values[i])] = values[i+1]
+		m[fmt.Sprint(values[i])] = values[i+1]
 	}
-	return
+	return m
 }

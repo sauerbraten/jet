@@ -1,0 +1,351 @@
+// Copyright 2016 José Santos <henrique_1609@me.com>
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Jet is a fast and dynamic template engine for the Go programming language, set of features
+// includes very fast template execution, a dynamic and flexible language, template inheritance, low number of allocations,
+// special interfaces to allow even further optimizations.
+
+package jet
+
+import (
+	"errors"
+	"fmt"
+	"html/template"
+	"io"
+	"io/ioutil"
+	"path/filepath"
+	"reflect"
+	"sync"
+)
+
+var defaultExtensions = []string{
+	"", // in case the path is given with the correct extension already
+	".jet",
+	".html.jet",
+	".jet.html",
+}
+
+// Set is responsible to load,invoke parse and cache templates and relations
+// every jet template is associated with one set.
+// create a set with jet.NewSet(escapeeFn) returns a pointer to the Set
+type Set struct {
+	loader            Loader
+	templates         map[string]*Template // parsed templates
+	escape            EscapeFunc           // escape function to use by default
+	globals           VarMap               // global scope for this template set
+	tmx               *sync.RWMutex        // template parsing mutex
+	gmx               *sync.RWMutex        // global variables map mutex
+	defaultExtensions []string
+	developmentMode   bool // when true, templates will never be fetched from or added to templates cache
+	leftDelim         string
+	rightDelim        string
+}
+
+// SetDevelopmentMode set's development mode on/off, in development mode template will be read from the loader and parsed on every run.
+func (s *Set) SetDevelopmentMode(b bool) *Set {
+	s.developmentMode = b
+	return s
+}
+
+func (s *Set) LookupGlobal(key string) (val interface{}, found bool) {
+	s.gmx.RLock()
+	val, found = s.globals[key]
+	s.gmx.RUnlock()
+	return
+}
+
+// AddGlobal add or set a global variable into the Set
+func (s *Set) AddGlobal(key string, i interface{}) *Set {
+	s.gmx.Lock()
+	s.globals[key] = reflect.ValueOf(i)
+	s.gmx.Unlock()
+	return s
+}
+
+func (s *Set) AddGlobalFunc(key string, fn Func) *Set {
+	return s.AddGlobal(key, fn)
+}
+
+// NewSetLoader creates a new set with custom Loader
+func NewSetLoader(escape EscapeFunc, loader Loader) *Set {
+	return &Set{
+		loader:            loader,
+		escape:            escape,
+		templates:         map[string]*Template{},
+		globals:           VarMap{},
+		tmx:               &sync.RWMutex{},
+		gmx:               &sync.RWMutex{},
+		defaultExtensions: append([]string{}, defaultExtensions...),
+	}
+}
+
+// NewHTMLSetLoader creates a new set with custom Loader
+func NewHTMLSetLoader(loader Loader) *Set {
+	return NewSetLoader(template.HTMLEscape, loader)
+}
+
+// NewSet creates a new set, dirs is a list of directories to be searched for templates
+func NewSet(escape EscapeFunc, dir string) *Set {
+	return NewSetLoader(escape, &OSFileSystemLoader{dir: dir})
+}
+
+// NewHTMLSet creates a new set, dirs is a list of directories to be searched for templates
+func NewHTMLSet(dir string) *Set {
+	return NewSet(template.HTMLEscape, dir)
+}
+
+// Delims sets the delimiters to the specified strings. Parsed templates will
+// inherit the settings. Not setting them leaves them at the default: {{ or }}.
+func (s *Set) Delims(left, right string) {
+	s.leftDelim = left
+	s.rightDelim = right
+}
+
+func (s *Set) getTemplateFromCache(path string) (t *Template, ok bool) {
+	// check path with all possible extensions in cache
+	for _, extension := range s.defaultExtensions {
+		canonicalPath := path + extension
+		if t, found := s.templates[canonicalPath]; found {
+			return t, true
+		}
+	}
+	return nil, false
+}
+
+type templateNotFoundErr struct {
+	path string
+}
+
+func (e templateNotFoundErr) Error() string {
+	return fmt.Sprintf("template %s could not be found", e.path)
+}
+
+func (s *Set) getTemplateFromLoader(path string) (t *Template, err error) {
+	// check path with all possible extensions in loader
+	for _, extension := range s.defaultExtensions {
+		canonicalPath := path + extension
+		if found := s.loader.Exists(canonicalPath); found {
+			return s.load(canonicalPath)
+		}
+	}
+	return nil, templateNotFoundErr{path}
+}
+
+func ensureAbs(path string) string {
+	if !filepath.IsAbs(path) {
+		return string(filepath.Separator) + path
+	}
+	return path
+}
+
+// GetTemplate tries to find (and load, if not yet loaded) the template at the specified path.
+//
+// for example, GetTemplate("catalog/products.list") with defaultExtensions set to []string{"", ".html.jet",".jet"}
+// will try to look for:
+//     1. catalog/products.list
+//     2. catalog/products.list.html.jet
+//     3. catalog/products.list.jet
+// in the set's templates cache, and if it can't find the template it will try to load the same paths via
+// the loader, and, if parsed successfully, cache the template.
+func (s *Set) GetTemplate(path string) (t *Template, err error) {
+	path = ensureAbs(path)
+
+	if !s.developmentMode {
+		s.tmx.RLock()
+		t, found := s.getTemplateFromCache(path)
+		if found {
+			s.tmx.RUnlock()
+			return t, nil
+		}
+		s.tmx.RUnlock()
+	}
+
+	t, err = s.getTemplateFromLoader(path)
+	if err == nil {
+		// put template into cache
+		s.tmx.Lock()
+		s.templates[t.Name] = t
+		s.tmx.Unlock()
+	}
+	return t, err
+}
+
+// same as GetTemplate, but assumes the reader already called s.tmx.RLock(), and
+// doesn't cache a template when found through the loader
+func (s *Set) getTemplate(path string) (t *Template, err error) {
+	path = ensureAbs(path)
+
+	if !s.developmentMode {
+		t, found := s.getTemplateFromCache(path)
+		if found {
+			return t, nil
+		}
+	}
+
+	return s.getTemplateFromLoader(path)
+}
+
+func (s *Set) resolvePath(path, absSiblingPath string) string {
+	if filepath.IsAbs(path) {
+		return path
+	}
+	siblingDir := filepath.Dir(absSiblingPath)
+	return filepath.Join(siblingDir, path)
+}
+
+func (s *Set) getSiblingTemplate(path, absSiblingPath string) (t *Template, err error) {
+	return s.getTemplate(s.resolvePath(path, absSiblingPath))
+}
+
+// Parse parses the template without adding it to the set's templates cache.
+func (s *Set) Parse(path, content string) (*Template, error) {
+	s.tmx.RLock()
+	t, err := s.parse(path, content)
+	s.tmx.RUnlock()
+
+	return t, err
+}
+
+func (s *Set) parse(name, text string) (t *Template, err error) {
+	t = &Template{
+		Name:         name,
+		ParseName:    name,
+		text:         text,
+		set:          s,
+		passedBlocks: make(map[string]*BlockNode),
+	}
+	defer t.recover(&err)
+
+	lexer := lex(name, text, false)
+	lexer.setDelimiters(s.leftDelim, s.rightDelim)
+	lexer.run()
+	t.startParse(lexer)
+	t.parseTemplate()
+	t.stopParse()
+
+	if t.extends != nil {
+		t.addBlocks(t.extends.processedBlocks)
+	}
+
+	for _, _import := range t.imports {
+		t.addBlocks(_import.processedBlocks)
+	}
+
+	t.addBlocks(t.passedBlocks)
+
+	return t, err
+}
+
+func (s *Set) load(path string) (*Template, error) {
+	f, err := s.loader.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	content, err := ioutil.ReadAll(f)
+	if err != nil {
+		return nil, err
+	}
+	return s.parse(path, string(content))
+}
+
+func (s *Set) Cache(path, content string) (*Template, error) {
+	if path != ensureAbs(path) {
+		return nil, errors.New("path must be absolute")
+	}
+
+	s.tmx.RLock()
+	t, err := s.parse(path, content)
+	s.tmx.RUnlock()
+	if err != nil {
+		return nil, err
+	}
+
+	s.tmx.Lock()
+	s.templates[t.Name] = t
+	s.tmx.Unlock()
+
+	return t, nil
+}
+
+func (s *Set) Uncache(path string) {
+	path = ensureAbs(path)
+
+	s.tmx.Lock()
+	delete(s.templates, path)
+	s.tmx.Unlock()
+}
+
+func (s *Set) Execute(templatePath string, w io.Writer, vars VarMap, context interface{}) (err error) {
+	rt, teardown := prepareRuntime(s, vars)
+	defer teardown()
+
+	defer func(err *error) {
+		if recovered := recover(); recovered != nil {
+			var ok bool
+			*err, ok = recovered.(error)
+			if !ok {
+				panic(recovered)
+			}
+		}
+	}(&err)
+
+	_, err = rt.execute(templatePath, w, reflect.ValueOf(context))
+
+	return
+}
+
+func (t *Template) String() (template string) {
+	if t.extends != nil {
+		if len(t.Root.Nodes) > 0 && len(t.imports) == 0 {
+			template += fmt.Sprintf("{{extends %q}}", t.extends.ParseName)
+		} else {
+			template += fmt.Sprintf("{{extends %q}}", t.extends.ParseName)
+		}
+	}
+
+	for k, _import := range t.imports {
+		if t.extends == nil && k == 0 {
+			template += fmt.Sprintf("{{import %q}}", _import.ParseName)
+		} else {
+			template += fmt.Sprintf("\n{{import %q}}", _import.ParseName)
+		}
+	}
+
+	if t.extends != nil || len(t.imports) > 0 {
+		if len(t.Root.Nodes) > 0 {
+			template += "\n" + t.Root.String()
+		}
+	} else {
+		template += t.Root.String()
+	}
+	return
+}
+
+type VarMap map[string]reflect.Value
+
+func (vars VarMap) Set(name string, v interface{}) VarMap {
+	vars[name] = reflect.ValueOf(v)
+	return vars
+}
+
+func (vars VarMap) SetFunc(name string, v Func) VarMap {
+	vars[name] = reflect.ValueOf(v)
+	return vars
+}
+
+// Execute executes the template in the w Writer
+func (t *Template) Execute(w io.Writer, vars VarMap, context interface{}) (err error) {
+	return t.set.Execute(t.Name, w, vars, context)
+}
