@@ -163,38 +163,28 @@ func (state *Runtime) Set(name string, val interface{}) {
 	state.setValue(name, reflect.ValueOf(val))
 }
 
-func (state *Runtime) setValue(name string, val reflect.Value) bool {
+func (state *Runtime) setValue(name string, val reflect.Value) {
 	sc := state.scope
-	initial := sc
 
-	// try to resolve variables in the current scope
+	// try to find a variable with the given name
 	_, ok := sc.variables[name]
-
-	// if not found walks parent scopes
 	for !ok && sc.parent != nil {
 		sc = sc.parent
 		_, ok = sc.variables[name]
 	}
 
 	if ok {
+		// set variable where it was found
 		sc.variables[name] = val
-		return false
+		return
 	}
 
-	for initial.variables == nil && initial.parent != nil {
-		initial = initial.parent
-	}
-
-	if initial.variables != nil {
-		sc.variables[name] = val
-		return false
-	}
-	return true
+	// set variable in original, current scope
+	state.scope.variables[name] = val
 }
 
 // Resolve resolves a value from the execution context
 func (state *Runtime) Resolve(name string) reflect.Value {
-
 	if name == "." {
 		return state.context
 	}
