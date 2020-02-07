@@ -21,23 +21,26 @@ import (
 
 // Arguments holds the arguments passed to jet.Func.
 type Arguments struct {
-	runtime *Runtime
-	argExpr []Expression
-	argVal  []reflect.Value
+	runtime  *Runtime
+	argExprs []Expression
+	argVals  []reflect.Value
 }
 
 // IsSet checks whether an argument is set or not. It behaves like the build-in isset function.
-func (a *Arguments) IsSet(argumentIndex int) bool {
-	return a.runtime.isSet(a.argExpr[argumentIndex])
+func (a *Arguments) IsSet(i int) bool {
+	if 0 <= i && i < len(a.argExprs) {
+		return a.runtime.isSet(a.argExprs[i])
+	}
+	return false
 }
 
 // Get gets an argument by index.
-func (a *Arguments) Get(argumentIndex int) reflect.Value {
-	if argumentIndex < len(a.argVal) {
-		return a.argVal[argumentIndex]
+func (a *Arguments) Get(i int) reflect.Value {
+	if 0 <= i && i < len(a.argVals) {
+		return a.argVals[i]
 	}
-	if argumentIndex < len(a.argVal)+len(a.argExpr) {
-		return a.runtime.evalPrimaryExpressionGroup(a.argExpr[argumentIndex-len(a.argVal)])
+	if len(a.argVals) <= i && i < len(a.argVals)+len(a.argExprs) {
+		return a.runtime.evalPrimaryExpressionGroup(a.argExprs[i-len(a.argVals)])
 	}
 	return reflect.Value{}
 }
@@ -50,17 +53,17 @@ func (a *Arguments) Panicf(format string, v ...interface{}) {
 // RequireNumOfArguments panics if the number of arguments is not in the range specified by min and max.
 // In case there is no minimum pass -1, in case there is no maximum pass -1 respectively.
 func (a *Arguments) RequireNumOfArguments(funcname string, min, max int) {
-	num := len(a.argExpr) + len(a.argVal)
-	if min >= 0 && num < min {
+	numArgs := len(a.argExprs) + len(a.argVals)
+	if min >= 0 && numArgs < min {
 		a.Panicf("unexpected number of arguments in a call to %s", funcname)
-	} else if max >= 0 && num > max {
+	} else if max >= 0 && numArgs > max {
 		a.Panicf("unexpected number of arguments in a call to %s", funcname)
 	}
 }
 
 // NumOfArguments returns the number of arguments
 func (a *Arguments) NumOfArguments() int {
-	return len(a.argExpr) + len(a.argVal)
+	return len(a.argExprs) + len(a.argVals)
 }
 
 // Runtime get the Runtime context

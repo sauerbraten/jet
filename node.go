@@ -181,7 +181,6 @@ func (a *ActionNode) String() string {
 // CommandNode holds a command (a pipeline inside an evaluating action).
 type CommandNode struct {
 	NodeBase
-	Call     bool
 	BaseExpr Expression
 	Args     []Expression
 }
@@ -192,7 +191,7 @@ func (c *CommandNode) append(arg Node) {
 
 func (c *CommandNode) String() string {
 	s := c.BaseExpr.String()
-	if c.Call {
+	if len(c.Args) > 0 {
 		s += ":"
 	}
 	for i, arg := range c.Args {

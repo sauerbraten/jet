@@ -547,40 +547,29 @@ func (rt *Runtime) evalBaseExpressionGroup(node Node) reflect.Value {
 	return reflect.Value{}
 }
 
-func (rt *Runtime) evalCallExpression(baseExpr reflect.Value, args []Expression, values ...reflect.Value) reflect.Value {
-	if funcType.AssignableTo(baseExpr.Type()) {
-		return baseExpr.Interface().(Func)(Arguments{runtime: rt, argExpr: args, argVal: values})
+func (rt *Runtime) evalCallExpression(baseExpr reflect.Value, argExprs []Expression, argVals ...reflect.Value) reflect.Value {
+	if baseExpr.Type().AssignableTo(funcType) {
+		return baseExpr.Interface().(Func)(Arguments{runtime: rt, argExprs: argExprs, argVals: argVals})
 	}
 
-	i := len(args) + len(values)
-	var returns []reflect.Value
-	if i <= 10 {
-		returns = reflect_Call10(i, rt, baseExpr, args, values...)
-	} else {
-		returns = reflect_Call(make([]reflect.Value, i, i), rt, baseExpr, args, values...)
+	args := make([]reflect.Value, 0, len(argExprs)+len(argVals))
+	for _, val := range argVals {
+		if val.IsValid() {
+			args = append(args, val)
+		}
+	}
+	for _, argExpr := range argExprs {
+		args = append(args, rt.evalPrimaryExpressionGroup(argExpr))
 	}
 
+	returns := reflect_Call(rt, baseExpr, args)
+
+	// todo: better handling of multiple returns
 	if len(returns) == 0 {
 		return reflect.Value{}
 	}
 
 	return returns[0]
-}
-
-func (rt *Runtime) evalCommandExpression(node *CommandNode) (reflect.Value, bool) {
-	term := rt.evalPrimaryExpressionGroup(node.BaseExpr)
-	if node.Call {
-		if term.Kind() == reflect.Func {
-			if term.Type() == escapeFuncType {
-				rt.evalEscapeFunc(term.Interface().(EscapeFunc), node)
-				return reflect.Value{}, true
-			}
-			return rt.evalCallExpression(term, node.Args), false
-		} else {
-			node.Args[0].errorf("command %q type %s is not func", node.Args[0], term.Type())
-		}
-	}
-	return term, false
 }
 
 func (rt *Runtime) evalChainNodeExpression(node *ChainNode) (reflect.Value, error) {
@@ -604,12 +593,15 @@ func (rt *Runtime) evalChainNodeExpression(node *ChainNode) (reflect.Value, erro
 	return resolved, nil
 }
 
-func (rt *Runtime) evalEscapeFunc(escape EscapeFunc, node *CommandNode, values ...reflect.Value) {
+func (rt *Runtime) printEscaped(escape EscapeFunc, node *CommandNode, values ...reflect.Value) {
 	w := &EscapeWriter{
 		w:      rt.writer,
 		escape: escape,
 	}
 	for _, v := range values {
+		if !v.IsValid() {
+			continue
+		}
 		_, err := fastprinter.PrintValue(w, v)
 		if err != nil {
 			node.error(err)
@@ -623,86 +615,73 @@ func (rt *Runtime) evalEscapeFunc(escape EscapeFunc, node *CommandNode, values .
 	}
 }
 
-func (rt *Runtime) evalCommandPipeExpression(node *CommandNode, value reflect.Value) (reflect.Value, bool) {
+func (rt *Runtime) evalCommandExpression(node *CommandNode, value reflect.Value) (reflect.Value, bool) {
 	term := rt.evalPrimaryExpressionGroup(node.BaseExpr)
 	if term.Kind() == reflect.Func {
 		if term.Type() == escapeFuncType {
-			rt.evalEscapeFunc(term.Interface().(EscapeFunc), node, value)
+			rt.printEscaped(term.Interface().(EscapeFunc), node, value)
 			return reflect.Value{}, true
 		}
-		return rt.evalCallExpression(term, node.Args, value), false
-	} else {
-		node.BaseExpr.errorf("pipe command %q type %s is not func", node.BaseExpr, term.Type())
+		if value.IsValid() {
+			return rt.evalCallExpression(term, node.Args, value), false
+		}
+		return rt.evalCallExpression(term, node.Args), false
 	}
 	return term, false
 }
 
-func (rt *Runtime) evalPipelineExpression(node *PipeNode) (value reflect.Value, safeWriter bool) {
-	value, safeWriter = rt.evalCommandExpression(node.Cmds[0])
-	for i := 1; i < len(node.Cmds); i++ {
-		if safeWriter {
+func (rt *Runtime) evalPipelineExpression(node *PipeNode) (value reflect.Value, rendered bool) {
+	for i := 0; i < len(node.Cmds); i++ {
+		if rendered {
 			node.Cmds[i].errorf("unexpected command %s, writer command should be the last command", node.Cmds[i])
 		}
-		value, safeWriter = rt.evalCommandPipeExpression(node.Cmds[i], value)
+		value, rendered = rt.evalCommandExpression(node.Cmds[i], value)
 	}
 	return
 }
 
-func reflect_Call(arguments []reflect.Value, rt *Runtime, fn reflect.Value, args []Expression, values ...reflect.Value) []reflect.Value {
+func reflect_Call(rt *Runtime, fn reflect.Value, args []reflect.Value) []reflect.Value {
 	typ := fn.Type()
 	numIn := typ.NumIn()
 
-	isVariadic := typ.IsVariadic()
-	if isVariadic {
+	if len(args) < numIn {
+		panic(fmt.Errorf("cannot call function %s (%s) (expecting at least %d parameters) with %d arguments", fn, fn.Type(), numIn, len(args)))
+	}
+
+	variadic := typ.IsVariadic()
+	if variadic {
 		numIn--
 	}
-	i, j := 0, 0
 
-	for ; i < numIn && i < len(values); i++ {
-		in := typ.In(i)
-		term := values[i]
-		if !term.Type().AssignableTo(in) {
-			term = term.Convert(in)
-		}
-		arguments[i] = term
-	}
+	for i, arg := range args[:numIn] {
+		expected := typ.In(i)
+		actual := arg.Type()
 
-	if isVariadic {
-		in := typ.In(numIn).Elem()
-		for ; i < len(values); i++ {
-			term := values[i]
-			if !term.Type().AssignableTo(in) {
-				term = term.Convert(in)
+		if !actual.AssignableTo(expected) {
+			if actual.ConvertibleTo(expected) {
+				args[i] = arg.Convert(expected)
+			} else {
+				panic(fmt.Errorf("cannot use argument %s (%s) as parameter of type %s in call to %s (%s)", arg, actual, expected, fn, fn.Type()))
 			}
-			arguments[i] = term
 		}
 	}
 
-	for ; i < numIn && j < len(args); i, j = i+1, j+1 {
-		in := typ.In(i)
-		term := rt.evalPrimaryExpressionGroup(args[j])
-		if !term.Type().AssignableTo(in) {
-			term = term.Convert(in)
-		}
-		arguments[i] = term
-	}
+	if variadic {
+		expected := typ.In(numIn).Elem()
+		for i, arg := range args[numIn:] {
+			actual := arg.Type()
 
-	if isVariadic {
-		in := typ.In(numIn).Elem()
-		for ; j < len(args); i, j = i+1, j+1 {
-			term := rt.evalPrimaryExpressionGroup(args[j])
-			if !term.Type().AssignableTo(in) {
-				term = term.Convert(in)
+			if !actual.AssignableTo(expected) {
+				if actual.ConvertibleTo(expected) {
+					args[i] = arg.Convert(expected)
+				} else {
+					panic(fmt.Errorf("cannot use argument %s (%s) as parameter of type %s in call to %s (%s)", arg, actual, expected, fn, fn.Type()))
+				}
 			}
-			arguments[i] = term
 		}
 	}
-	return fn.Call(arguments[0:i])
-}
 
-func reflect_Call10(i int, rt *Runtime, fn reflect.Value, args []Expression, values ...reflect.Value) []reflect.Value {
-	var arguments [10]reflect.Value
-	return reflect_Call(arguments[0:i], rt, fn, args, values...)
+	return fn.Call(args)
 }
 
 func isUint(kind reflect.Kind) bool {

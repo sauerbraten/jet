@@ -729,7 +729,6 @@ func (t *Template) command(baseExpr Expression) *CommandNode {
 	}
 
 	if t.nextNonSpace().typ == itemColon {
-		cmd.Call = true
 		cmd.Args = t.parseArguments()
 	} else {
 		t.backup()

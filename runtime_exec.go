@@ -73,8 +73,8 @@ func (rt *Runtime) executeList(list *ListNode) reflect.Value {
 				}
 			}
 			if node.Pipe != nil {
-				v, safeWriter := rt.evalPipelineExpression(node.Pipe)
-				if !safeWriter && v.IsValid() {
+				v, printed := rt.evalPipelineExpression(node.Pipe)
+				if !printed && v.IsValid() {
 					if v.Type().Implements(rendererType) {
 						v.Interface().(Renderer).Render(rt)
 					} else {
