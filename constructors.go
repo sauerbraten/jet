@@ -130,8 +130,8 @@ func (t *Template) newYield(pos Pos, line int, name string, bplist *BlockParamet
 	return &YieldNode{NodeBase: NodeBase{TemplateName: t.Name, NodeType: NodeYield, Pos: pos, Line: line}, Name: name, Parameters: bplist, Expression: pipe, Content: content, IsContent: isContent}
 }
 
-func (t *Template) newInclude(pos Pos, line int, name, pipe Expression) *IncludeNode {
-	return &IncludeNode{NodeBase: NodeBase{TemplateName: t.Name, NodeType: NodeInclude, Pos: pos, Line: line}, Name: name, Expression: pipe}
+func (t *Template) newInclude(pos Pos, line int, name, context Expression, atomic bool) *IncludeNode {
+	return &IncludeNode{NodeBase: NodeBase{TemplateName: t.Name, NodeType: NodeInclude, Pos: pos, Line: line}, Name: name, Context: context, Atomic: atomic}
 }
 
 func (t *Template) newReturn(pos Pos, line int, pipe Expression) *ReturnNode {

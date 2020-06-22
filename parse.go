@@ -420,17 +420,23 @@ func (t *Template) parseYield() Node {
 }
 
 func (t *Template) parseInclude() Node {
-	var pipe Expression
+	var (
+		context Expression
+		atomic  bool
+	)
 
 	name := t.expression("include")
 
 	if t.peekNonSpace().typ != itemRightDelim {
-		pipe = t.expression("include")
+		context = t.expression("include")
+		if t.peekNonSpace().typ == itemAtomic {
+			atomic = true
+		}
 	}
 
 	t.expect(itemRightDelim, "include invocation")
 
-	return t.newInclude(name.Position(), t.lex.lineNumber(), name, pipe)
+	return t.newInclude(name.Position(), t.lex.lineNumber(), name, context, atomic)
 }
 
 func (t *Template) parseReturn() Node {

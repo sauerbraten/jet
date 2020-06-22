@@ -15,6 +15,7 @@
 package jet
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"reflect"
@@ -513,6 +514,26 @@ func (st *Runtime) executeList(list *ListNode) (returnValue reflect.Value) {
 	return returnValue
 }
 
+func (st *Runtime) executeListAndIgnorePanics(list *ListNode) (returnValue reflect.Value) {
+	writer := st.Writer
+	buf := new(bytes.Buffer)
+
+	defer func() {
+		// swallow all panics
+		r := recover()
+
+		// copy buffered render output to writer only if no panic occured
+		if r == nil {
+			io.Copy(writer, buf)
+		}
+	}()
+
+	st.Writer = buf
+	defer func() { st.Writer = writer }()
+
+	return st.executeList(list)
+}
+
 func (st *Runtime) executeInclude(node *IncludeNode) (returnValue reflect.Value) {
 	var templateName string
 	name := st.evalPrimaryExpressionGroup(node.Name)
@@ -536,10 +557,10 @@ func (st *Runtime) executeInclude(node *IncludeNode) (returnValue reflect.Value)
 	st.blocks = t.processedBlocks
 
 	var context reflect.Value
-	if node.Expression != nil {
+	if node.Context != nil {
 		context = st.context
 		defer func() { st.context = context }()
-		st.context = st.evalPrimaryExpressionGroup(node.Expression)
+		st.context = st.evalPrimaryExpressionGroup(node.Context)
 	}
 
 	Root := t.Root
@@ -548,7 +569,11 @@ func (st *Runtime) executeInclude(node *IncludeNode) (returnValue reflect.Value)
 		Root = t.Root
 	}
 
-	returnValue = st.executeList(Root)
+	if node.Atomic {
+		returnValue = st.executeListAndIgnorePanics(Root)
+	} else {
+		returnValue = st.executeList(Root)
+	}
 
 	return returnValue
 }

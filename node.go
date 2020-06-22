@@ -546,15 +546,23 @@ func (t *YieldNode) String() string {
 // IncludeNode represents a {{include }} action.
 type IncludeNode struct {
 	NodeBase
-	Name       Expression
-	Expression Expression
+	Name    Expression
+	Context Expression
+	Atomic  bool
 }
 
 func (t *IncludeNode) String() string {
-	if t.Expression == nil {
-		return fmt.Sprintf("{{include %s}}", t.Name)
+	if t.Context == nil {
+		if !t.Atomic {
+			return fmt.Sprintf("{{include %s}}", t.Name)
+		}
+		return fmt.Sprintf("{{include %s atomic}}", t.Name)
 	}
-	return fmt.Sprintf("{{include %s %s}}", t.Name, t.Expression)
+
+	if !t.Atomic {
+		return fmt.Sprintf("{{include %s %s}}", t.Name, t.Context)
+	}
+	return fmt.Sprintf("{{include %s %s atomic}}", t.Name, t.Context)
 }
 
 type binaryExprNode struct {
